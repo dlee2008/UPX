@@ -33,6 +33,7 @@ void *membuffer_get_void_ptr(MemBuffer &mb) { return mb.getVoidPtr(); }
 unsigned membuffer_get_size(MemBuffer &mb) { return mb.getSize(); }
 
 #if defined(_MSC_VER) && !defined(__INTEL_COMPILER) //{
+#include <intrin.h>
 #define __builtin_return_address(level) _ReturnAddress()
 #endif //}
 /*************************************************************************
