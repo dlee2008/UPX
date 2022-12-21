@@ -131,21 +131,24 @@ unsigned MemBuffer::getSizeForDecompression(unsigned uncompressed_size, unsigned
 
 void MemBuffer::allocForCompression(unsigned uncompressed_size, unsigned extra) {
     unsigned size = getSizeForCompression(uncompressed_size, extra);
-    alloc(size);
+    alloc(size, __builtin_return_address(0));
 }
 
 void MemBuffer::allocForDecompression(unsigned uncompressed_size, unsigned extra) {
     unsigned size = getSizeForDecompression(uncompressed_size, extra);
-    alloc(size);
+    alloc(size, __builtin_return_address(0));
 }
 
-void MemBuffer::fill(unsigned off, unsigned len, int value) {
+void MemBuffer::fill(unsigned off, unsigned len, int value, void *caller) {
     checkState();
     assert((int) off >= 0);
     assert((int) len >= 0);
     assert(off <= b_size_in_bytes);
     assert(len <= b_size_in_bytes);
     assert(off + len <= b_size_in_bytes);
+    if (!caller)
+        caller = __builtin_return_address(0);
+    bread_crumb = caller;
     if (len > 0)
         memset(b + off, value, len);
 }
@@ -173,7 +176,7 @@ void MemBuffer::checkState() const {
     }
 }
 
-void MemBuffer::alloc(upx_uint64_t size) {
+void MemBuffer::alloc(upx_uint64_t size, void *caller) {
     // NOTE: we don't automatically free a used buffer
     assert(b == nullptr);
     assert(b_size_in_bytes == 0);
@@ -185,6 +188,9 @@ void MemBuffer::alloc(upx_uint64_t size) {
         throwOutOfMemoryException();
     b = p;
     b_size_in_bytes = ACC_ICONV(unsigned, size);
+    if (!caller)
+        caller = __builtin_return_address(0);
+    bread_crumb = caller;
     total_active_bytes += b_size_in_bytes;  // 'atomic' needed for multiprocessing
     if (use_simple_mcheck()) {
         b = p + 16;
@@ -195,12 +201,12 @@ void MemBuffer::alloc(upx_uint64_t size) {
         set_ne32(b + b_size_in_bytes + 4, global_alloc_counter++);
     }
 #if !defined(__SANITIZE_ADDRESS__) && 0
-    fill(0, b_size_in_bytes, (rand() & 0xff) | 1); // debug
+    fill(0, b_size_in_bytes, (rand() & 0xff) | 1, caller); // debug
     (void) VALGRIND_MAKE_MEM_UNDEFINED(b, b_size_in_bytes);
 #endif
 }
 
-void MemBuffer::dealloc() {
+void MemBuffer::dealloc(void *caller) {
     if (b != nullptr) {
         checkState();
         if (use_simple_mcheck()) {
@@ -213,6 +219,9 @@ void MemBuffer::dealloc() {
             ::free(b - 16);
         } else
             ::free(b);
+        if (!caller)
+            caller = __builtin_return_address(0);
+        bread_crumb = caller;
         total_active_bytes -= b_size_in_bytes;  // 'atomic' needed
         b = nullptr;
         b_size_in_bytes = 0;

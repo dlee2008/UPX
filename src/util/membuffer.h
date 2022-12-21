@@ -80,11 +80,11 @@ public:
     static unsigned getSizeForCompression(unsigned uncompressed_size, unsigned extra = 0);
     static unsigned getSizeForDecompression(unsigned uncompressed_size, unsigned extra = 0);
 
-    void alloc(upx_uint64_t size);
+    void alloc(upx_uint64_t size, void *caller = nullptr);
     void allocForCompression(unsigned uncompressed_size, unsigned extra = 0);
     void allocForDecompression(unsigned uncompressed_size, unsigned extra = 0);
 
-    void dealloc();
+    void dealloc(void *caller = nullptr);
     void checkState() const;
     unsigned getSize() const { return b_size_in_bytes; }
 
@@ -93,9 +93,10 @@ public:
     const void *getVoidPtr() const { return (const void *) b; }
 
     // util
-    void fill(unsigned off, unsigned len, int value);
-    void clear(unsigned off, unsigned len) { fill(off, len, 0); }
-    void clear() { fill(0, b_size_in_bytes, 0); }
+    void fill(unsigned off, unsigned len, int value, void *caller = nullptr);
+    void clear(unsigned off, unsigned len, void *caller = nullptr) { fill(off, len, 0, caller); }
+    void clear(void *caller = nullptr) { fill(0, b_size_in_bytes, 0, caller); }
+    void *bread_crumb;  // debugging aid: most recent significant return address
     static upx_uint64_t total_active_bytes;
 
     // If the entire range [skip, skip+take) is inside the buffer,
