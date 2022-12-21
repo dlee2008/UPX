@@ -32,6 +32,9 @@
 void *membuffer_get_void_ptr(MemBuffer &mb) { return mb.getVoidPtr(); }
 unsigned membuffer_get_size(MemBuffer &mb) { return mb.getSize(); }
 
+#if _MSC_VER && !__INTEL_COMPILER //{
+#define _builtin_return_address(level) _ReturnAddress()
+#endif //}
 /*************************************************************************
 // bool use_simple_mcheck()
 **************************************************************************/
