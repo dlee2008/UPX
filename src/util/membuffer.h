@@ -96,6 +96,7 @@ public:
     void fill(unsigned off, unsigned len, int value);
     void clear(unsigned off, unsigned len) { fill(off, len, 0); }
     void clear() { fill(0, b_size_in_bytes, 0); }
+    static upx_uint64_t total_active_bytes;
 
     // If the entire range [skip, skip+take) is inside the buffer,
     // then return &b[skip]; else throwCantPack(sprintf(errfmt, skip, take)).

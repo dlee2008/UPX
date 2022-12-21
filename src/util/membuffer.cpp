@@ -60,6 +60,8 @@ __acc_static_forceinline constexpr bool use_simple_mcheck() { return true; }
 //
 **************************************************************************/
 
+upx_uint64_t MemBuffer::total_active_bytes(0);
+
 MemBuffer::MemBuffer(upx_uint64_t size_in_bytes) { alloc(size_in_bytes); }
 
 MemBuffer::~MemBuffer() { this->dealloc(); }
@@ -183,6 +185,7 @@ void MemBuffer::alloc(upx_uint64_t size) {
         throwOutOfMemoryException();
     b = p;
     b_size_in_bytes = ACC_ICONV(unsigned, size);
+    total_active_bytes += b_size_in_bytes;  // 'atomic' needed for multiprocessing
     if (use_simple_mcheck()) {
         b = p + 16;
         // store magic constants to detect buffer overruns
@@ -210,6 +213,7 @@ void MemBuffer::dealloc() {
             ::free(b - 16);
         } else
             ::free(b);
+        total_active_bytes -= b_size_in_bytes;  // 'atomic' needed
         b = nullptr;
         b_size_in_bytes = 0;
     } else {
