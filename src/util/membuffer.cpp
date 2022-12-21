@@ -191,7 +191,7 @@ void MemBuffer::alloc(upx_uint64_t size, void *caller) {
     if (!caller)
         caller = __builtin_return_address(0);
     bread_crumb = caller;
-    total_active_bytes += b_size_in_bytes;  // 'atomic' needed for multiprocessing
+    total_active_bytes += b_size_in_bytes; // 'atomic' needed for multiprocessing
     if (use_simple_mcheck()) {
         b = p + 16;
         // store magic constants to detect buffer overruns
@@ -222,7 +222,7 @@ void MemBuffer::dealloc(void *caller) {
         if (!caller)
             caller = __builtin_return_address(0);
         bread_crumb = caller;
-        total_active_bytes -= b_size_in_bytes;  // 'atomic' needed
+        total_active_bytes -= b_size_in_bytes; // 'atomic' needed
         b = nullptr;
         b_size_in_bytes = 0;
     } else {

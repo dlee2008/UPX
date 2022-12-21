@@ -96,7 +96,7 @@ public:
     void fill(unsigned off, unsigned len, int value, void *caller = nullptr);
     void clear(unsigned off, unsigned len, void *caller = nullptr) { fill(off, len, 0, caller); }
     void clear(void *caller = nullptr) { fill(0, b_size_in_bytes, 0, caller); }
-    void *bread_crumb;  // debugging aid: most recent significant return address
+    void *bread_crumb; // debugging aid: most recent significant return address
     static upx_uint64_t total_active_bytes;
 
     // If the entire range [skip, skip+take) is inside the buffer,
