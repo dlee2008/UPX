@@ -32,10 +32,14 @@
 void *membuffer_get_void_ptr(MemBuffer &mb) { return mb.getVoidPtr(); }
 unsigned membuffer_get_size(MemBuffer &mb) { return mb.getSize(); }
 
-#if defined(_MSC_VER) && !defined(__INTEL_COMPILER) //{
-#include <intrin.h>
-#define __builtin_return_address(level) _ReturnAddress()
-#endif //}
+MemBuffer::Stats MemBuffer::stats;
+
+#if DEBUG
+#define debug_set(var, expr) (var) = (expr)
+#else
+#define debug_set(var, expr) /*empty*/
+#endif
+
 /*************************************************************************
 // bool use_simple_mcheck()
 **************************************************************************/
@@ -64,15 +68,17 @@ __acc_static_forceinline constexpr bool use_simple_mcheck() { return true; }
 //
 **************************************************************************/
 
-upx_uint64_t MemBuffer::total_active_bytes(0);
-
-MemBuffer::MemBuffer(upx_uint64_t size_in_bytes) { alloc(size_in_bytes); }
+MemBuffer::MemBuffer(upx_uint64_t size_in_bytes) {
+    alloc(size_in_bytes);
+    debug_set(debug.last_return_address_alloc, upx_return_address());
+}
 
 MemBuffer::~MemBuffer() { this->dealloc(); }
 
 // similar to BoundedPtr, except checks only at creation
 // skip == offset, take == size_in_bytes
 void *MemBuffer::subref_impl(const char *errfmt, size_t skip, size_t take) {
+    debug_set(debug.last_return_address_subref, upx_return_address());
     // check overrun and wrap-around
     if (skip + take > b_size_in_bytes || skip + take < skip) {
         char buf[100];
@@ -135,15 +141,18 @@ unsigned MemBuffer::getSizeForDecompression(unsigned uncompressed_size, unsigned
 
 void MemBuffer::allocForCompression(unsigned uncompressed_size, unsigned extra) {
     unsigned size = getSizeForCompression(uncompressed_size, extra);
-    alloc(size, __builtin_return_address(0));
+    alloc(size);
+    debug_set(debug.last_return_address_alloc, upx_return_address());
 }
 
 void MemBuffer::allocForDecompression(unsigned uncompressed_size, unsigned extra) {
     unsigned size = getSizeForDecompression(uncompressed_size, extra);
-    alloc(size, __builtin_return_address(0));
+    alloc(size);
+    debug_set(debug.last_return_address_alloc, upx_return_address());
 }
 
-void MemBuffer::fill(unsigned off, unsigned len, int value, void *caller) {
+void MemBuffer::fill(unsigned off, unsigned len, int value) {
+    debug_set(debug.last_return_address_fill, upx_return_address());
     checkState();
     assert((int) off >= 0);
     assert((int) len >= 0);
@@ -165,8 +174,6 @@ void MemBuffer::fill(unsigned off, unsigned len, int value, void *caller) {
 #define MAGIC1(p) ((PTR_BITS(p) ^ 0xfefdbeeb) | 1)
 #define MAGIC2(p) ((PTR_BITS(p) ^ 0xfefdbeeb ^ 0x80024011) | 1)
 
-unsigned MemBuffer::global_alloc_counter = 0;
-
 void MemBuffer::checkState() const {
     if (!b)
         throwInternalError("block not allocated");
@@ -186,8 +193,10 @@ void MemBuffer::alloc(upx_uint64_t size, void *caller) {
     assert(b_size_in_bytes == 0);
     //
     assert(size > 0);
+    debug_set(debug.last_return_address_alloc, upx_return_address());
     size_t bytes = mem_size(1, size, use_simple_mcheck() ? 32 : 0);
     unsigned char *p = (unsigned char *) malloc(bytes);
+    NO_printf("MemBuffer::alloc %llu: %p\n", size, p);
     if (!p)
         throwOutOfMemoryException();
     b = p;
@@ -202,17 +211,22 @@ void MemBuffer::alloc(upx_uint64_t size, void *caller) {
         set_ne32(b - 8, b_size_in_bytes);
         set_ne32(b - 4, MAGIC1(b));
         set_ne32(b + b_size_in_bytes, MAGIC2(b));
-        set_ne32(b + b_size_in_bytes + 4, global_alloc_counter++);
+        set_ne32(b + b_size_in_bytes + 4, stats.global_alloc_counter);
     }
 #if !defined(__SANITIZE_ADDRESS__) && 0
     fill(0, b_size_in_bytes, (rand() & 0xff) | 1, caller); // debug
     (void) VALGRIND_MAKE_MEM_UNDEFINED(b, b_size_in_bytes);
 #endif
+    stats.global_alloc_counter += 1;
+    stats.global_total_bytes += b_size_in_bytes;
+    stats.global_total_active_bytes += b_size_in_bytes;
 }
 
 void MemBuffer::dealloc(void *caller) {
     if (b != nullptr) {
+        debug_set(debug.last_return_address_dealloc, upx_return_address());
         checkState();
+        stats.global_total_active_bytes -= b_size_in_bytes;
         if (use_simple_mcheck()) {
             // clear magic constants
             set_ne32(b - 8, 0);

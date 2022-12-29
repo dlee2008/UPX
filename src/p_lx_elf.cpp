@@ -5024,6 +5024,13 @@ void PackLinuxElf64::un_shlib_1(
     if (fo) {
         // Re-generate unmodified rtld data below xct_off
         // FIXME: depends on (yct_off < limit_dynhdr)
+        InputFile u_fi;
+        // Recover original Elf headers from current output file
+        u_fi.open(fo->getName(), 0);
+        u_fi.readx((void *)o_elfhdrs, o_elfhdrs.getSize());
+        u_fi.close();
+
+        // Re-generate unmodified rtld data below xct_off
         unsigned d = yct_off - ph.u_len;
         fo->write(&ibuf[ph.u_len], d);
         total_out += d;
