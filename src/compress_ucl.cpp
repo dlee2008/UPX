@@ -2,8 +2,8 @@
 
    This file is part of the UPX executable compressor.
 
-   Copyright (C) 1996-2022 Markus Franz Xaver Johannes Oberhumer
-   Copyright (C) 1996-2022 Laszlo Molnar
+   Copyright (C) 1996-2023 Markus Franz Xaver Johannes Oberhumer
+   Copyright (C) 1996-2023 Laszlo Molnar
    All Rights Reserved.
 
    UPX and the UCL library are free software; you can redistribute them
@@ -271,7 +271,7 @@ unsigned upx_ucl_crc32(const void *buf, unsigned len, unsigned crc) {
 // doctest checks
 **************************************************************************/
 
-#if DEBUG && 1
+#if DEBUG && !defined(DOCTEST_CONFIG_DISABLE) && 1
 
 #include "util/membuffer.h"
 
