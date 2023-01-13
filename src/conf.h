@@ -175,8 +175,11 @@ ACC_COMPILE_TIME_ASSERT_HEADER((char)(-1) == 255) // -funsigned-char
 #endif
 
 // malloc debuggers
-#if (WITH_VALGRIND)
-#  include <valgrind/memcheck.h>
+#ifndef WITH_VALGRIND
+#  define WITH_VALGRIND 1
+#endif
+#if (WITH_VALGRIND) && defined(__GNUC__) && !defined(__SANITIZE_ADDRESS__)
+#  include <valgrind/include/valgrind/memcheck.h>
 #endif
 #if !defined(VALGRIND_MAKE_MEM_DEFINED)
 #  define VALGRIND_MAKE_MEM_DEFINED(addr,len)   0
@@ -560,6 +563,7 @@ constexpr bool string_ge(const char *a, const char *b) {
 //#define M_CL1B_LE16     13
 #define M_LZMA          14
 #define M_DEFLATE       15      /* zlib */
+#define M_ZSTD          16
 // compression methods internal usage
 #define M_ALL           (-1)
 #define M_END           (-2)
@@ -573,6 +577,7 @@ constexpr bool string_ge(const char *a, const char *b) {
 //#define M_IS_CL1B(x)    ((x) >= M_CL1B_LE32  && (x) <= M_CL1B_LE16)
 #define M_IS_LZMA(x)    (((x) & 255) == M_LZMA)
 #define M_IS_DEFLATE(x) ((x) == M_DEFLATE)
+#define M_IS_ZSTD(x)    ((x) == M_ZSTD)
 
 
 // filters
@@ -669,12 +674,10 @@ struct lzma_compress_config_t
     void reset();
 };
 
-
 struct ucl_compress_config_t : public REAL_ucl_compress_config_t
 {
     void reset() { memset(this, 0xff, sizeof(*this)); }
 };
-
 
 struct zlib_compress_config_t
 {
@@ -689,13 +692,20 @@ struct zlib_compress_config_t
     void reset();
 };
 
+struct zstd_compress_config_t
+{
+    unsigned dummy;
+
+    void reset();
+};
 
 struct upx_compress_config_t
 {
     lzma_compress_config_t  conf_lzma;
     ucl_compress_config_t   conf_ucl;
     zlib_compress_config_t  conf_zlib;
-    void reset() { conf_lzma.reset(); conf_ucl.reset(); conf_zlib.reset(); }
+    zstd_compress_config_t  conf_zstd;
+    void reset() { conf_lzma.reset(); conf_ucl.reset(); conf_zlib.reset(); conf_zstd.reset(); }
 };
 
 #define NULL_cconf  ((upx_compress_config_t *) nullptr)
@@ -719,14 +729,12 @@ struct lzma_compress_result_t
     void reset() { memset(this, 0, sizeof(*this)); }
 };
 
-
 struct ucl_compress_result_t
 {
     ucl_uint result[16];
 
     void reset() { memset(this, 0, sizeof(*this)); }
 };
-
 
 struct zlib_compress_result_t
 {
@@ -735,6 +743,12 @@ struct zlib_compress_result_t
     void reset() { memset(this, 0, sizeof(*this)); }
 };
 
+struct zstd_compress_result_t
+{
+    unsigned dummy;
+
+    void reset() { memset(this, 0, sizeof(*this)); }
+};
 
 struct upx_compress_result_t
 {
@@ -745,10 +759,11 @@ struct upx_compress_result_t
     lzma_compress_result_t  result_lzma;
     ucl_compress_result_t   result_ucl;
     zlib_compress_result_t  result_zlib;
+    zstd_compress_result_t  result_zstd;
 
     void reset() {
         memset(this, 0, sizeof(*this));
-        result_lzma.reset(); result_ucl.reset(); result_zlib.reset();
+        result_lzma.reset(); result_ucl.reset(); result_zlib.reset(); result_zstd.reset();
     }
 };
 

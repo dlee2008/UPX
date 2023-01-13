@@ -144,6 +144,12 @@ endif
 ifeq ($(wildcard ./vendor/ucl/include/.),)
   $(error ERROR: missing git submodule; run 'git submodule update --init')
 endif
+ifeq ($(wildcard ./vendor/valgrind/include/.),)
+  $(error ERROR: missing git submodule; run 'git submodule update --init')
+endif
 ifeq ($(wildcard ./vendor/zlib/crc32.c),)
+  $(error ERROR: missing git submodule; run 'git submodule update --init')
+endif
+ifeq ($(wildcard ./vendor/zstd/lib/.),)
   $(error ERROR: missing git submodule; run 'git submodule update --init')
 endif
