@@ -25,6 +25,8 @@
    <markus@oberhumer.com>               <ezerotven+github@gmail.com>
  */
 
+// main entry, mostly boring stuff; see work.cpp for actual action
+
 #include "conf.h"
 #include "compress.h"
 #include "file.h"
@@ -34,6 +36,10 @@
 /*************************************************************************
 // options
 **************************************************************************/
+
+#ifndef OPTIONS_VAR
+#define OPTIONS_VAR "UPX"
+#endif
 
 static const char *argv0 = "";
 const char *progname = "";

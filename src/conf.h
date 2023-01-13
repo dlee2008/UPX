@@ -29,12 +29,8 @@
 #ifndef UPX_CONF_H__
 #define UPX_CONF_H__ 1
 
-#if defined(__cplusplus)
-#  if (__cplusplus >= 201402L)
-#  elif defined(_MSC_VER) && defined(_MSVC_LANG) && (_MSVC_LANG+0 >= 201402L)
-#  else
-#    error "C++ 14 is required"
-#  endif
+#if !(__cplusplus+0 >= 201703L)
+#  error "C++ 17 is required"
 #endif
 
 #include "version.h"
@@ -48,11 +44,9 @@
 #  endif
 #endif
 
-#undef NDEBUG
-
 
 /*************************************************************************
-// ACC
+// ACC and system includes
 **************************************************************************/
 
 #ifndef ACC_CFG_USE_NEW_STYLE_CASTS
@@ -121,19 +115,29 @@ ACC_COMPILE_TIME_ASSERT_HEADER((char)(-1) == 255) // -funsigned-char
 #  include <intrin.h>
 #endif
 
-/* intergral types */
-typedef acc_int8_t      upx_int8_t;
-typedef acc_uint8_t     upx_uint8_t;
-typedef acc_int16_t     upx_int16_t;
-typedef acc_uint16_t    upx_uint16_t;
-typedef acc_int32_t     upx_int32_t;
-typedef acc_uint32_t    upx_uint32_t;
-typedef acc_int64_t     upx_int64_t;
-typedef acc_uint64_t    upx_uint64_t;
-typedef acc_uintptr_t   upx_uintptr_t;
+// C++ headers
+#include <exception>
+#include <new>
+#include <type_traits>
+#include <typeinfo>
+#if __STDC_NO_ATOMICS__ || 1
+// UPX currently does not use multithreading
+#define upx_std_atomic(Type)    Type
+//#define upx_std_atomic(Type)    typename std::add_volatile<Type>::type
+#else
+#include <atomic>
+#define upx_std_atomic(Type)    std::atomic<Type>
+#endif
+//#define DOCTEST_CONFIG_DISABLE 1
+#include <doctest/doctest/parts/doctest_fwd.h>
+#if WITH_BOOST_PFR
+#include <sstream>
+#include <boost/pfr/io.hpp>
+#endif
 
-typedef unsigned char   upx_byte;
-#define upx_bytep       upx_byte *
+// IMPORTANT: unconditionally enable assertions
+#undef NDEBUG
+#include <assert.h>
 
 
 /*************************************************************************
@@ -184,9 +188,19 @@ typedef unsigned char   upx_byte;
 #  define VALGRIND_MAKE_MEM_UNDEFINED(addr,len) 0
 #endif
 
-// IMPORTANT: unconditionally enable assertions
-#undef NDEBUG
-#include <assert.h>
+// intergral types
+typedef acc_int8_t      upx_int8_t;
+typedef acc_uint8_t     upx_uint8_t;
+typedef acc_int16_t     upx_int16_t;
+typedef acc_uint16_t    upx_uint16_t;
+typedef acc_int32_t     upx_int32_t;
+typedef acc_uint32_t    upx_uint32_t;
+typedef acc_int64_t     upx_int64_t;
+typedef acc_uint64_t    upx_uint64_t;
+typedef acc_uintptr_t   upx_uintptr_t;
+
+typedef unsigned char   upx_byte;
+#define upx_bytep       upx_byte *
 
 // protect against integer overflows and malicious header fields
 // see C 11 standard, Annex K
@@ -288,10 +302,6 @@ typedef upx_int64_t upx_off_t;
 #  define O_BINARY  0
 #endif
 
-#ifndef OPTIONS_VAR
-#  define OPTIONS_VAR   "UPX"
-#endif
-
 
 /*************************************************************************
 //
@@ -344,7 +354,7 @@ inline void NO_fprintf(FILE *, const char *, ...) {}
 #define __packed_struct_end()   };
 
 #if (ACC_ARCH_M68K && ACC_OS_TOS && ACC_CC_GNUC) && defined(__MINT__)
-// hack for broken compiler
+// horrible hack for broken compiler
 #define upx_alignas_1       __attribute__((__aligned__(1),__packed__))
 #define upx_alignas_16      __attribute__((__aligned__(2))) // object file maximum 2 ???
 #define upx_alignas__(a)    upx_alignas_ ## a
@@ -748,20 +758,6 @@ struct upx_compress_result_t
 **************************************************************************/
 
 #include "util/snprintf.h"   // must get included first!
-
-#include <exception>
-#include <new>
-#include <type_traits>
-#include <typeinfo>
-#if __STDC_NO_ATOMICS__ || 1
-// UPX currently does not use multithreading
-#define upx_std_atomic(Type)    Type
-//#define upx_std_atomic(Type)    typename std::add_volatile<Type>::type
-#else
-#include <atomic>
-#define upx_std_atomic(Type)    std::atomic<Type>
-#endif
-
 #include "options.h"
 #include "except.h"
 #include "bele.h"
@@ -778,9 +774,6 @@ void *membuffer_get_void_ptr(MemBuffer &mb);
 unsigned membuffer_get_size(MemBuffer &mb);
 
 #include "util/xspan.h"
-
-//#define DOCTEST_CONFIG_DISABLE 1
-#include <doctest/doctest/parts/doctest_fwd.h>
 
 // util/dt_check.cpp
 void upx_compiler_sanity_check();
@@ -840,6 +833,53 @@ int upx_test_overlap       ( const upx_bytep buf,
                                    unsigned* dst_len,
                                    int method,
                              const upx_compress_result_t *cresult );
+
+
+/*************************************************************************
+//
+**************************************************************************/
+
+#if WITH_BOOST_PFR
+template <class A>
+__acc_noinline std::string pfr_string(const A &a) {
+    std::ostringstream ss;
+    ss << boost::pfr::io(a);
+    return ss.str();
+}
+template <class A, class B>
+__acc_noinline std::string pfr_string(const A &a, const B &b) {
+    std::ostringstream ss;
+    ss << boost::pfr::io(a);
+    ss << ' ';
+    ss << boost::pfr::io(b);
+    return ss.str();
+}
+template <class A, class B, class C>
+__acc_noinline std::string pfr_string(const A &a, const B &b, const C &c) {
+    std::ostringstream ss;
+    ss << boost::pfr::io(a);
+    ss << ' ';
+    ss << boost::pfr::io(b);
+    ss << ' ';
+    ss << boost::pfr::io(c);
+    return ss.str();
+}
+template <class A, class B, class C, class D>
+__acc_noinline std::string pfr_string(const A &a, const B &b, const C &c, const D &d) {
+    std::ostringstream ss;
+    ss << boost::pfr::io(a);
+    ss << ' ';
+    ss << boost::pfr::io(b);
+    ss << ' ';
+    ss << boost::pfr::io(c);
+    ss << ' ';
+    ss << boost::pfr::io(d);
+    return ss.str();
+}
+// note: this MUST be a macro and not a function because of implicit temporary variable
+#define pfr_str(a,...)  (pfr_string(a, ##__VA_ARGS__).c_str())
+#endif // WITH_BOOST_PFR
+
 
 /*************************************************************************
 // raw_bytes() - get underlying memory from checked buffers/pointers.

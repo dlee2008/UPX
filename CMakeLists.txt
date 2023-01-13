@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.4.3 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.8.0 FATAL_ERROR)
 
 # compilation config options
 if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.git")
@@ -24,14 +24,16 @@ option(UPX_CONFIG_DISABLE_SELF_PACK_TEST "Do not test packing UPX with itself" O
 
 # Disallow in-source builds. Note that you will still have to manually
 # clean up a few files if you accidentally try an in-source build.
-set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
-set(CMAKE_DISABLE_SOURCE_CHANGES  ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-if(",${CMAKE_SOURCE_DIR}," STREQUAL ",${CMAKE_BINARY_DIR},")
-    message(FATAL_ERROR "ERROR: In-source builds are not allowed, please use an extra build dir.")
+if(NOT MSVC_IDE)
+    set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
+    set(CMAKE_DISABLE_SOURCE_CHANGES  ON)
+    if(",${CMAKE_CURRENT_SOURCE_DIR}," STREQUAL ",${CMAKE_CURRENT_BINARY_DIR},")
+        message(FATAL_ERROR "ERROR: In-source builds are not allowed, please use an extra build dir.")
+    endif()
 endif()
-set(CMAKE_C_STANDARD_REQUIRED   ON)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD_REQUIRED     ON)
+set(CMAKE_CXX_STANDARD_REQUIRED   ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # determine git revision
 set(GITREV_SHORT "")
@@ -110,8 +112,8 @@ set_property(TARGET upx_vendor_zlib PROPERTY C_STANDARD 11)
 file(GLOB upx_SOURCES "src/*.cpp" "src/util/*.cpp")
 list(SORT upx_SOURCES)
 add_executable(upx ${upx_SOURCES})
-#target_compile_features(upx PRIVATE cxx_std_14)
-set_property(TARGET upx PROPERTY CXX_STANDARD 14)
+#target_compile_features(upx PRIVATE cxx_std_17)
+set_property(TARGET upx PROPERTY CXX_STANDARD 17)
 target_link_libraries(upx upx_vendor_ucl upx_vendor_zlib)
 
 if(UPX_CONFIG_DISABLE_WERROR)
@@ -139,7 +141,7 @@ if(MSVC)
 else()
     # protect against security threats caused by misguided compiler "optimizations"
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-        add_definitions(-fno-delete-null-pointer-checks)
+        add_definitions(-fno-delete-null-pointer-checks -fno-lifetime-dse)
     endif()
     add_definitions(-fno-strict-aliasing -fno-strict-overflow -funsigned-char)
     # disable overambitious auto-vectorization until this actually gains something
@@ -180,7 +182,7 @@ else()
 endif()
 
 set(t upx)
-target_include_directories(${t} PRIVATE vendor)
+target_include_directories(${t} PRIVATE vendor vendor/boost-pfr/include)
 target_compile_definitions(${t} PRIVATE $<$<CONFIG:Debug>:DEBUG=1>)
 if(GITREV_SHORT)
     target_compile_definitions(${t} PRIVATE UPX_VERSION_GITREV="${GITREV_SHORT}${GITREV_PLUS}")
@@ -190,7 +192,7 @@ if(GITREV_SHORT)
 endif()
 upx_sanitize_target(${t})
 if(MSVC)
-    target_compile_options(${t} PRIVATE -EHsc -J -W4 ${warn_WX})
+    target_compile_options(${t} PRIVATE -Zc:__cplusplus -EHsc -J -W4 ${warn_WX})
 else()
     target_compile_options(${t} PRIVATE
         -Wall -Wextra -Wcast-align -Wcast-qual -Wmissing-declarations -Wpointer-arith
@@ -233,15 +235,18 @@ endif()
 
 #***********************************************************************
 # "make install"
+# "cmake --install ."
 #***********************************************************************
 
 # installation prefix and directories
 if(NOT CMAKE_INSTALL_PREFIX)
-    message(FATAL_ERROR "ERROR: CMAKE_INSTALL_PREFIX is not defined.")
+    #message(FATAL_ERROR "ERROR: CMAKE_INSTALL_PREFIX is not defined.")
+    message(WARNING "WARNING: CMAKE_INSTALL_PREFIX is not defined.")
 endif()
-include(GNUInstallDirs)
-
-if(DEFINED CMAKE_INSTALL_FULL_BINDIR)
+if(CMAKE_INSTALL_PREFIX)
+    include(GNUInstallDirs)
+endif()
+if(CMAKE_INSTALL_PREFIX AND DEFINED CMAKE_INSTALL_FULL_BINDIR)
     install(TARGETS upx DESTINATION "${CMAKE_INSTALL_FULL_BINDIR}")
     install(FILES
         COPYING LICENSE NEWS README THANKS doc/upx-doc.html doc/upx-doc.txt
@@ -254,8 +259,8 @@ endif()
 # finally print some info about the build configuration
 #***********************************************************************
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/maint/src/CMakeLists.extra.txt")
-include("${CMAKE_CURRENT_SOURCE_DIR}/maint/src/CMakeLists.extra.txt")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/maint/make/CMakeLists.maint.txt")
+include("${CMAKE_CURRENT_SOURCE_DIR}/maint/make/CMakeLists.maint.txt")
 endif()
 
 function(print_var)
@@ -268,7 +273,7 @@ endfunction()
 print_var(CMAKE_HOST_SYSTEM_NAME CMAKE_HOST_SYSTEM_VERSION)
 print_var(CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION)
 print_var(CMAKE_CROSSCOMPILING)
-print_var(CMAKE_C_COMPILER_ID   CMAKE_C_COMPILER_VERSION   CMAKE_C_COMPILER_ARCHITECTURE_ID   CMAKE_C_PLATFORM_ID   CMAKE_C_COMPILER_ABI)
+print_var(CMAKE_C_COMPILER_ID CMAKE_C_COMPILER_VERSION CMAKE_C_COMPILER_ARCHITECTURE_ID CMAKE_C_PLATFORM_ID CMAKE_C_COMPILER_ABI)
 print_var(CMAKE_CXX_COMPILER_ID CMAKE_CXX_COMPILER_VERSION CMAKE_CXX_COMPILER_ARCHITECTURE_ID CMAKE_CXX_PLATFORM_ID CMAKE_CXX_COMPILER_ABI)
 print_var(CMAKE_INSTALL_PREFIX)
 print_var(CMAKE_CONFIGURATION_TYPES)
@@ -277,7 +282,7 @@ if (CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|Release)$")
     message(WARNING "WARNING: unsupported CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}; please use \"Debug\" or \"Release\"")
 endif()
 
-# final extra sanity checks; in case of problems you can remove these if you know what you are doing
+# extra sanity checks to detect incompatible C vs CXX settings
 if(NOT ",${CMAKE_C_PLATFORM_ID}," STREQUAL ",${CMAKE_CXX_PLATFORM_ID},")
     message(FATAL_ERROR "ERROR: CMAKE_C_PLATFORM_ID CMAKE_CXX_PLATFORM_ID mismatch")
 endif()
