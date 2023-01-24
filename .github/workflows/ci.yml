@@ -1,5 +1,4 @@
 # Support for GitHub Actions -- https://github.com/features/actions
-# Copyright (C) Markus Franz Xaver Johannes Oberhumer
 
 # note: GitHub Actions runner images are frequently updated, and
 # unfortunately this sometimes breaks builds in mysterious ways...
@@ -7,17 +6,10 @@
 
 name: 'CI'
 
-on:
-  push:
-    branches:
-      - '*'
-      - '!appveyor*'
-      - '!gitea*'
-      - '!gitlab*'
-      - '!travis*'
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 env:
+  DEBIAN_FRONTEND: noninteractive
   UPX_CMAKE_BUILD_FLAGS: --verbose
 
 jobs:
@@ -30,7 +22,6 @@ jobs:
           uname -a; pwd; id; umask
           mkdir ../deps; cd ../deps; mkdir packages
           # for ubuntu-22.04: install python2-minimal
-          ##export DEBIAN_FRONTEND=noninteractive
           ##sudo apt-get update && sudo apt-get install -y --no-install-recommends python2-minimal
           # manually install compat libs from Ubuntu 16.04
           wget -q 'http://archive.kernel.org/ubuntu-archive/ubuntu/pool/main/m/mpfr4/libmpfr4_3.1.6-1_amd64.deb'
@@ -63,16 +54,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-20.04, use_m32: false }
           - { os: ubuntu-22.04, use_m32: true }
+          - { os: ubuntu-20.04, use_m32: false }
     steps:
-      - name: 'Install extra 32-bit packages'
+      - name: 'Install extra 32-bit and Windows packages'
         if: ${{ matrix.use_m32 }}
         run: |
-          export DEBIAN_FRONTEND=noninteractive
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib
+          sudo apt-get install -y g++-multilib g++-mingw-w64-i686 g++-mingw-w64-x86-64
       - name: 'Check out code'
         uses: actions/checkout@v3
         with: { submodules: true }
@@ -92,11 +82,17 @@ jobs:
       - name: 'Build cmake extra/gcc-m32/release'
         if: ${{ matrix.use_m32 }}
         run:   'make build/extra/gcc-m32/release'
+      - name: 'Build cmake extra/cross-windows-mingw32/release'
+        if: ${{ matrix.use_m32 }}
+        run:   'make build/extra/cross-windows-mingw32/release'
+      - name: 'Build cmake extra/cross-windows-mingw64/release'
+        if: ${{ matrix.use_m32 }}
+        run:   'make build/extra/cross-windows-mingw64/release'
       - name: 'Make artifact'
         run: |
           N=upx-${GITHUB_REF_NAME}-${GITHUB_SHA:0:7}-${{ matrix.os }}
           mkdir -p "tmp/artifact/$N"
-          (cd build/extra && cp -ai --parents */*/upx "../../tmp/artifact/$N")
+          (cd build && shopt -s nullglob && cp -ai --parents */upx{,.exe} */*/*/upx{,.exe} "../tmp/artifact/$N")
           (cd tmp/artifact && tar --sort=name -czf "$N.tar.gz" "$N" && rm -rf "./$N")
           # GitHub Actions magic: set "artifact_name" environment value for use in next step
           echo "artifact_name=$N" >> $GITHUB_ENV
@@ -131,8 +127,7 @@ jobs:
       matrix:
         include:
           - { os: macos-11, gcc: gcc-10, gxx: 'g++-10', testsuite: true }
-          # { os: macos-12, gcc: gcc-11, gxx: 'g++-11', testsuite: true } # disable gcc - XCode 14.0.1 ld bug; supposed to be fixed in 14.1
-          - { os: macos-12, testsuite: true }
+          - { os: macos-12, gcc: gcc-11, gxx: 'g++-11', testsuite: true }
     steps:
       - name: 'Install brew packages'
         if: ${{ matrix.testsuite }}
@@ -143,22 +138,27 @@ jobs:
         uses: actions/checkout@v3
         with: { submodules: true }
       - name: 'Check out test suite'
+        if: ${{ matrix.testsuite }}
         run: 'git clone --depth=1 https://github.com/upx/upx-testsuite ../deps/upx-testsuite'
+      - name: 'Build cmake extra/clang/debug'
+        run:   'make build/extra/clang/debug'
+      - name: 'Build cmake extra/clang/release'
+        run:   'make build/extra/clang/release'
       - name: 'Build cmake extra/gcc/debug'
         if: ${{ matrix.gcc != '' }}
         run:   'make build/extra/gcc/debug CC=${{ matrix.gcc }} CXX=${{ matrix.gxx }}'
       - name: 'Build cmake extra/gcc/release'
         if: ${{ matrix.gcc != '' }}
         run:   'make build/extra/gcc/release CC=${{ matrix.gcc }} CXX=${{ matrix.gxx }}'
-      - name: 'Build cmake extra/clang/debug'
-        run:   'make build/extra/clang/debug'
-      - name: 'Build cmake extra/clang/release'
-        run:   'make build/extra/clang/release'
+      - name: 'Build cmake xtarget/cross-darwin-arm64/release'
+        run: |
+          export CC="clang -target arm64-apple-darwin" CXX="clang++ -target arm64-apple-darwin"
+          make UPX_XTARGET=cross-darwin-arm64
       - name: 'Make artifact'
         run: |
           N=upx-${GITHUB_REF_NAME}-${GITHUB_SHA:0:7}-${{ matrix.os }}
           mkdir -p "tmp/artifact/$N"
-          (cd build/extra && rsync -R -a */*/upx "../../tmp/artifact/$N/")
+          (cd build && rsync -R -a */*/*/upx "../tmp/artifact/$N/")
           (cd tmp/artifact && gtar --sort=name -czf "$N.tar.gz" "$N" && rm -rf "./$N")
           # GitHub Actions magic: set "artifact_name" environment value for use in next step
           echo "artifact_name=$N" >> $GITHUB_ENV
@@ -187,8 +187,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # windows-2019 used to work but got broken with the 20220821.1
-          # runner-image update; disable for now
+          # windows-2019 used to work but got broken with the 20220821.1 runner-image update;
+          # as you cannot download that image this is painful to debug; disable for now
           # see https://github.com/actions/runner-images.git
           ####- { os: windows-2019 }
           - { os: windows-2022 }
@@ -199,7 +199,7 @@ jobs:
       - name: 'Check out test suite'
         run: 'git clone --depth=1 https://github.com/upx/upx-testsuite ../deps/upx-testsuite'
       - name: 'Inspect runner-image settings'
-        # see https://github.com/actions/runner-images.git
+        # debug remote image; also see https://github.com/actions/runner-images.git
         if: ${{ false }}
         run: |
           Get-Command bash; Get-Command cmake; Get-Command make
@@ -235,7 +235,7 @@ jobs:
 
   job-windows-toolchains:
     needs: [ job-rebuild-and-verify-stubs ]
-    name: ${{ matrix.name }}
+    name: ${{ format('windows {0}', matrix.name) }}
     runs-on: ${{ matrix.os }}
     env:
       C: ${{ matrix.C }}
@@ -284,20 +284,21 @@ jobs:
           cl -MT -J -O2 -W3 -WX %DEFS% -c %H%\vendor\zlib\*.c
           link -lib -out:zlib.lib *.obj
           @REM ===== build zstd =====
-          cd %BDIR%\zstd
-          set s=%H%\vendor\zstd\lib
-          cl -MT -J -O2 -W4 -WX -DDYNAMIC_BMI2=0 -DZSTD_DISABLE_ASM %DEFS% -c %s%\common\*.c %s%\compress\*.c %s%\decompress\*.c
-          link -lib -out:zstd.lib *.obj
+          @rem cd %BDIR%\zstd
+          @rem set s=%H%\vendor\zstd\lib
+          @rem cl -MT -J -O2 -W4 -WX -DDYNAMIC_BMI2=0 -DZSTD_DISABLE_ASM %DEFS% -c %s%\common\*.c %s%\compress\*.c %s%\decompress\*.c
+          @rem link -lib -out:zstd.lib *.obj
           @REM ===== build UPX =====
           cd %BDIR%\upx
           set s=%H%\src
           cat .GITREV.txt
           set /p GITREV=<.GITREV.txt
-          cl -std:c++17 -Zc:__cplusplus -EHsc -J -O2 -W4 -WX -DUPX_VERSION_GITREV="""%GITREV%""" -DWITH_ZSTD %DEFS% -I%H%\vendor -I%H%\vendor\boost-pfr\include -Feupx.exe %s%\*.cpp %s%\check\*.cpp %s%\util\*.cpp %BDIR%\ucl\ucl.lib %BDIR%\zlib\zlib.lib %BDIR%\zstd\zstd.lib /link setargv.obj
+          set sources=%s%\*.cpp %s%\check\*.cpp %s%\compress\*.cpp %s%\console\*.cpp %s%\filter\*.cpp %s%\util\*.cpp
+          cl -MT -std:c++17 -Zc:__cplusplus -EHsc -J -O2 -W4 -WX -DUPX_VERSION_GITREV="""%GITREV%""" -DWITH_ZSTD=0 %DEFS% -I%H%\vendor -I%H%\vendor\boost-pfr\include -Feupx.exe %sources% %BDIR%\ucl\ucl.lib %BDIR%\zlib\zlib.lib /link setargv.obj
       - name: 'Make artifact'
         shell: bash
         run: |
-          N=upx-${GITHUB_REF_NAME}-${GITHUB_SHA:0:7}-${{ matrix.name }}
+          N=upx-${GITHUB_REF_NAME}-${GITHUB_SHA:0:7}-windows-${{ matrix.name }}
           mkdir -p "tmp/artifact/$N/$B"
           cp -ai build/$C/$B/upx/upx*.exe "tmp/artifact/$N/$B"
           # GitHub Actions magic: set "artifact_name" environment value for use in next step
@@ -327,5 +328,105 @@ jobs:
           export upx_testsuite_SRCDIR="$(readlink -en ../deps/upx-testsuite)"
           testsuite_1=$(readlink -en ./.github/travis_testsuite_1.sh)
           env -C build/$C/$B/upx upx_exe=./upx.exe bash "$testsuite_1"
+
+  job-linux-zigcc:
+    if: ${{ true }}
+    needs: [ job-rebuild-and-verify-stubs ]
+    name: ${{ format('zigcc {0} {1}', matrix.zig_target, matrix.zig_pic) }}
+    runs-on: ubuntu-latest
+    ##container: alpine:3.17 # older versions such as alpine:3.12 also work; no-container also works
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { zig_target: aarch64-linux-musl }
+          - { zig_target: aarch64-macos.11-none }
+          - { zig_target: aarch64-macos.12-none }
+          - { zig_target: aarch64-macos.13-none }
+          - { zig_target: aarch64-windows-gnu }
+          - { zig_target: i386-linux-musl }
+          - { zig_target: i386-windows-gnu }
+          - { zig_target: x86_64-linux-musl }
+          - { zig_target: x86_64-linux-musl, zig_pic: -fPIE }
+          - { zig_target: x86_64-macos.11-none }
+          - { zig_target: x86_64-macos.12-none }
+          - { zig_target: x86_64-macos.13-none }
+          - { zig_target: x86_64-windows-gnu }
+    env:
+      # 2023-01-24
+      ZIG_DIST_VERSION: 0.11.0-dev.1436+59d9afcb5
+      # for zig-cc wrapper scripts (see below):
+      ZIG_CPPFLAGS: -DUPX_DOCTEST_CONFIG_MULTITHREADING
+      ZIG_FLAGS: ${{ matrix.zig_flags }}
+      ZIG_PIC: ${{ matrix.zig_pic }}
+      ZIG_TARGET: ${{ matrix.zig_target }}
+    steps:
+      - name: 'Install Alpine packages'
+        if: ${{ job.container }}
+        shell: sh
+        run: |
+          apk update && apk upgrade && apk add bash cmake file git make tar xz
+          # set PATH like in Ubuntu
+          echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+          # this seems to be needed when running in a container (beause of UID mismatch??)
+          git config --global --add safe.directory '*'
+      - name: 'Check out code'
+        uses: actions/checkout@v3
+        with: { submodules: true }
+      - name: ${{ format('Install Zig {0}', env.ZIG_DIST_VERSION) }}
+        shell: bash
+        run: |
+          # GitHub Actions magic: set "UPX_GITREV_SHORT" environment value for use in steps below
+          rev=$(git rev-parse --short=7 HEAD)
+          echo "UPX_GITREV_SHORT=$rev" >> $GITHUB_ENV
+          # update ZIG_TARGET (i386 => x86)
+          ZIG_TARGET=${ZIG_TARGET/i386-/x86-}
+          echo "ZIG_TARGET=$ZIG_TARGET" >> $GITHUB_ENV
+          # install zig; note that ~/.local/bin is included in the default $PATH on Ubuntu
+          mkdir -p -v ~/.local/bin
+          cd ~/.local/bin
+          ZIG_DIST_NAME=zig-linux-x86_64-${ZIG_DIST_VERSION}
+          wget -q 'https://ziglang.org/builds/'${ZIG_DIST_NAME}.tar.xz
+          ls -l ${ZIG_DIST_NAME}.tar.xz
+          tar -xoJf ${ZIG_DIST_NAME}.tar.xz
+          rm ${ZIG_DIST_NAME}.tar.xz
+          ln -s -v ${ZIG_DIST_NAME}/zig zig
+          #echo "PATH=$PATH" && which zig
+          echo -n 'zig version: '; zig version
+          # create wrapper scripts (needed for CMake)
+          echo -e '#!/bin/sh\nexec zig ar "$@"' > zig-ar
+          echo -e '#!/bin/sh\nexec zig cc  -target $ZIG_TARGET $ZIG_PIC $ZIG_FLAGS $ZIG_CPPFLAGS $ZIG_CFLAGS   "$@"' > zig-cc
+          echo -e '#!/bin/sh\nexec zig c++ -target $ZIG_TARGET $ZIG_PIC $ZIG_FLAGS $ZIG_CPPFLAGS $ZIG_CXXFLAGS "$@"' > zig-cxx
+          echo -e '#!/bin/sh\nexec zig ranlib "$@"' > zig-ranlib
+          chmod +x zig-ar zig-cc zig-cxx zig-ranlib
+          ls -la; head zig-ar zig-cc zig-cxx zig-ranlib
+      - name: ${{ format('Build Release with zig-cc -target {0} {1}', env.ZIG_TARGET, env.ZIG_PIC) }}
+        run: |
+          mkdir -p build/zig/${ZIG_TARGET}${ZIG_PIC}/release
+          cd       build/zig/${ZIG_TARGET}${ZIG_PIC}/release
+          cmake ../../../.. -DCMAKE_BUILD_TYPE=Release -DCMAKE_AR=$HOME/.local/bin/zig-ar -DCMAKE_C_COMPILER=zig-cc -DCMAKE_CXX_COMPILER=zig-cxx -DCMAKE_RANLIB=$HOME/.local/bin/zig-ranlib $EXTRA_CMAKE_CONFIG_FLAGS_RELEASE
+          cmake --build . --config Release --parallel --verbose
+          file ./upx*
+      - name: ${{ format('Build Debug with zig-cc -target {0} {1}', env.ZIG_TARGET, env.ZIG_PIC) }}
+        run: |
+          mkdir -p build/zig/${ZIG_TARGET}${ZIG_PIC}/debug
+          cd       build/zig/${ZIG_TARGET}${ZIG_PIC}/debug
+          cmake ../../../.. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_AR=$HOME/.local/bin/zig-ar -DCMAKE_C_COMPILER=zig-cc -DCMAKE_CXX_COMPILER=zig-cxx -DCMAKE_RANLIB=$HOME/.local/bin/zig-ranlib $EXTRA_CMAKE_CONFIG_FLAGS_DEBUG
+          cmake --build . --config Debug --parallel --verbose
+          file ./upx*
+      - name: ${{ format('Make artifact from upx-{0}-{1}', github.ref_name, env.UPX_GITREV_SHORT) }}
+        shell: bash
+        run: |
+          N=upx-${GITHUB_REF_NAME}-${GITHUB_SHA:0:7}-zigcc-${{ matrix.zig_target }}${ZIG_PIC}
+          mkdir -p "tmp/artifact/$N"
+          (cd build && shopt -s nullglob && cp -ai --parents */upx{,.exe} */*/*/upx{,.exe} "../tmp/artifact/$N")
+          (cd tmp/artifact && tar --sort=name -czf "$N.tar.gz" "$N" && rm -rf "./$N")
+          # GitHub Actions magic: set "artifact_name" environment value for use in next step
+          echo "artifact_name=$N" >> $GITHUB_ENV
+      - name: ${{ format('Upload artifact {0}', env.artifact_name) }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.artifact_name }}
+          path: tmp/artifact
 
 # vim:set ts=2 sw=2 et:

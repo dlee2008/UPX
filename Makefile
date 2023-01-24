@@ -8,13 +8,15 @@
 #   mkdir -p build/release
 #   cd build/release
 #   cmake ../..
-#   cmake --build .
+#   cmake --build . --parallel # (or just use "make -j" instead)
 
 CMAKE = cmake
 UPX_CMAKE_BUILD_FLAGS += --parallel
 ifneq ($(VERBOSE),)
   UPX_CMAKE_BUILD_FLAGS += --verbose
 endif
+# enable this if you prefer Ninja for the actual builds:
+#UPX_CMAKE_CONFIG_FLAGS += -G Ninja
 
 #***********************************************************************
 # default
@@ -42,6 +44,7 @@ release: build/release
 
 .PHONY: PHONY
 .NOTPARALLEL: # because the actual builds use "cmake --parallel"
+.SUFFIXES:
 
 #***********************************************************************
 # extra builds: some pre-defined build configurations
@@ -100,6 +103,13 @@ build/extra/gcc-m64/release: PHONY; $(call run_config_and_build,$@,Release)
 build/extra/gcc-m64/%: export CC  = gcc -m64
 build/extra/gcc-m64/%: export CXX = g++ -m64
 
+# force building with clang Static Analyzer (scan-build)
+build/extra/scan-build/debug:   PHONY; $(call run_config_and_build,$@,Debug)
+build/extra/scan-build/release: PHONY; $(call run_config_and_build,$@,Release)
+build/extra/scan-build/%: CMAKE := scan-build $(CMAKE)
+build/extra/scan-build/%: export CCC_CC  ?= clang
+build/extra/scan-build/%: export CCC_CXX ?= clang++
+
 # cross compiler: Linux glibc aarch64-linux-gnu
 build/extra/cross-linux-aarch64/debug:   PHONY; $(call run_config_and_build,$@,Debug)
 build/extra/cross-linux-aarch64/release: PHONY; $(call run_config_and_build,$@,Release)
@@ -117,42 +127,58 @@ build/extra/cross-windows-mingw32/debug:   PHONY; $(call run_config_and_build,$@
 build/extra/cross-windows-mingw32/release: PHONY; $(call run_config_and_build,$@,Release)
 build/extra/cross-windows-mingw32/%: export CC  = i686-w64-mingw32-gcc
 build/extra/cross-windows-mingw32/%: export CXX = i686-w64-mingw32-g++
-# disable sanitize to avoid link errors with current MinGW-w64 versions
-build/extra/cross-windows-mingw32/%: UPX_CMAKE_CONFIG_FLAGS += -DUPX_CONFIG_DISABLE_SANITIZE=1
 
 # cross compiler: Windows x64 win64 MinGW
 build/extra/cross-windows-mingw64/debug:   PHONY; $(call run_config_and_build,$@,Debug)
 build/extra/cross-windows-mingw64/release: PHONY; $(call run_config_and_build,$@,Release)
 build/extra/cross-windows-mingw64/%: export CC  = x86_64-w64-mingw32-gcc
 build/extra/cross-windows-mingw64/%: export CXX = x86_64-w64-mingw32-g++
-# disable sanitize to avoid link errors with current MinGW-w64 versions
-build/extra/cross-windows-mingw64/%: UPX_CMAKE_CONFIG_FLAGS += -DUPX_CONFIG_DISABLE_SANITIZE=1
+
+# cross compiler: macOS arm64
+build/extra/cross-darwin-arm64/debug:   PHONY; $(call run_config_and_build,$@,Debug)
+build/extra/cross-darwin-arm64/release: PHONY; $(call run_config_and_build,$@,Release)
+build/extra/cross-darwin-arm64/%: export CC  = clang -target arm64-apple-darwin
+build/extra/cross-darwin-arm64/%: export CXX = clang++ -target arm64-apple-darwin
+
+# cross compiler: macOS x86_64
+build/extra/cross-darwin-x86_64/debug:   PHONY; $(call run_config_and_build,$@,Debug)
+build/extra/cross-darwin-x86_64/release: PHONY; $(call run_config_and_build,$@,Release)
+build/extra/cross-darwin-x86_64/%: export CC  = clang -target x86_64-apple-darwin
+build/extra/cross-darwin-x86_64/%: export CXX = clang++ -target x86_64-apple-darwin
+
+#***********************************************************************
+# advanced: generic eXtra target
+#***********************************************************************
+
+# usage:
+#   make UPX_XTARGET=mytarget CC="my-cc -flags" CXX="my-cxx -flags"
+#   make UPX_XTARGET=mytarget CC="my-cc -flags" CXX="my-cxx -flags" xtarget/debug
+
+ifneq ($(UPX_XTARGET),)
+ifneq ($(CC),)
+ifneq ($(CXX),)
+
+UPX_XTARGET := $(UPX_XTARGET)
+build/xtarget/$(UPX_XTARGET)/debug:   PHONY; $(call run_config_and_build,$@,Debug)
+build/xtarget/$(UPX_XTARGET)/release: PHONY; $(call run_config_and_build,$@,Release)
+build/xtarget/$(UPX_XTARGET)/%: export CC
+build/xtarget/$(UPX_XTARGET)/%: export CXX
+# shortcuts
+xtarget/debug:   build/xtarget/$(UPX_XTARGET)/debug
+xtarget/release: build/xtarget/$(UPX_XTARGET)/release
+# set new default
+.DEFAULT_GOAL = xtarget/release
+##$(eval .DEFAULT_GOAL = build/xtarget/$(UPX_XTARGET)/release)
+
+endif
+endif
+endif
 
 #***********************************************************************
 # check git submodules
 #***********************************************************************
 
-ifeq ($(wildcard ./vendor/boost-pfr/include/.),)
-  $(error ERROR: missing git submodule; run 'git submodule update --init')
-endif
-ifeq ($(wildcard ./vendor/doctest/doctest/.),)
-  $(error ERROR: missing git submodule; run 'git submodule update --init')
-endif
-ifeq ($(wildcard ./vendor/lzma-sdk/C/.),)
-  $(error ERROR: missing git submodule; run 'git submodule update --init')
-endif
-ifeq ($(wildcard ./vendor/rangeless/include/.),)
-  $(error ERROR: missing git submodule; run 'git submodule update --init')
-endif
-ifeq ($(wildcard ./vendor/ucl/include/.),)
-  $(error ERROR: missing git submodule; run 'git submodule update --init')
-endif
-ifeq ($(wildcard ./vendor/valgrind/include/.),)
-  $(error ERROR: missing git submodule; run 'git submodule update --init')
-endif
-ifeq ($(wildcard ./vendor/zlib/crc32.c),)
-  $(error ERROR: missing git submodule; run 'git submodule update --init')
-endif
-ifeq ($(wildcard ./vendor/zstd/lib/.),)
-  $(error ERROR: missing git submodule; run 'git submodule update --init')
-endif
+SUBMODULES = doctest lzma-sdk ucl valgrind zlib
+
+dummy := $(foreach m,$(SUBMODULES),$(if $(wildcard vendor/$m/[CL]*),$m,\
+    $(error ERROR: missing git submodule $m; run 'git submodule update --init')))

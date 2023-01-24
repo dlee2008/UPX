@@ -8,7 +8,7 @@ if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.git")
     option(UPX_CONFIG_DISABLE_WERROR   "Do not compile with default -Werror option."   ON)
 else()
     # strict config defaults for devel builds
-    message(STATUS "upx info: strict config defaults enabled")
+    message(STATUS "===== UPX info: strict config defaults enabled")
     option(UPX_CONFIG_DISABLE_GITREV   "Do not compile with default Git version info." OFF)
     option(UPX_CONFIG_DISABLE_SANITIZE "Do not compile with default sanitize options." OFF)
     option(UPX_CONFIG_DISABLE_WERROR   "Do not compile with default -Werror option."   OFF)
@@ -78,6 +78,7 @@ else()
     message(STATUS "UPX_VERSION_GITREV: not set")
 endif()
 
+# CMake init
 project(upx VERSION 4.0.2 LANGUAGES C CXX)
 
 # set default build type to "Release"
@@ -99,8 +100,7 @@ endif()
 # targets and compilation flags
 #***********************************************************************
 
-#find_package(Threads)
-
+#find_package(Threads) # multithreading is currently not used; maybe in UPX version 5
 set(UPX_CONFIG_DISABLE_ZSTD ON) # zstd is currently not used; maybe in UPX version 5
 
 file(GLOB ucl_SOURCES "vendor/ucl/src/*.c")
@@ -120,7 +120,7 @@ add_library(upx_vendor_zstd STATIC ${zstd_SOURCES})
 set_property(TARGET upx_vendor_zstd PROPERTY C_STANDARD 11)
 endif()
 
-file(GLOB upx_SOURCES "src/*.cpp" "src/check/*.cpp" "src/util/*.cpp")
+file(GLOB upx_SOURCES "src/*.cpp" "src/[cfu]*/*.cpp")
 list(SORT upx_SOURCES)
 add_executable(upx ${upx_SOURCES})
 #target_compile_features(upx PRIVATE cxx_std_17)
@@ -149,6 +149,8 @@ if(MSVC)
     add_definitions(-D_CRT_NONSTDC_NO_WARNINGS)
     add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+    # set __cplusplus according to selected C++ standard; use new preprocessor
+    add_definitions(-Zc:__cplusplus -Zc:preprocessor)
 else()
     # protect against security threats caused by misguided compiler "optimizations"
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -159,9 +161,18 @@ else()
     add_definitions(-fno-tree-vectorize)
 endif()
 
+# compile a target with -O2 in Debug build
+function(upx_compile_target_debug_with_O2 t)
+    if(MSVC)
+        # msvc uses some Debug compile options like -RTC1 that are incompatible with -O2
+    else()
+        target_compile_options(${t} PRIVATE $<$<CONFIG:Debug>:-O2>)
+    endif()
+endfunction()
+
 function(upx_sanitize_target t)
     if(NOT UPX_CONFIG_DISABLE_SANITIZE AND NOT MSVC)
-        if(CMAKE_C_PLATFORM_ID MATCHES "^MinGW")
+        if(CMAKE_C_PLATFORM_ID MATCHES "^MinGW" OR MINGW OR CYGWIN)
             # avoid link errors with current MinGW-w64 versions
             # see https://www.mingw-w64.org/contribute/#sanitizers-asan-tsan-usan
         else()
@@ -175,14 +186,16 @@ endfunction()
 
 set(t upx_vendor_ucl)
 target_include_directories(${t} PRIVATE vendor/ucl/include vendor/ucl)
+upx_compile_target_debug_with_O2(${t})
 upx_sanitize_target(${t})
 if(MSVC)
     target_compile_options(${t} PRIVATE -J -W4 ${warn_WX})
 else()
-    target_compile_options(${t} PRIVATE -Wall -Wextra -Wvla ${warn_Werror})
+    target_compile_options(${t} PRIVATE -Wall -Wextra -Wcast-align -Wcast-qual -Wpointer-arith -Wvla -Wwrite-strings ${warn_Werror})
 endif()
 
 set(t upx_vendor_zlib)
+upx_compile_target_debug_with_O2(${t})
 upx_sanitize_target(${t})
 if(MSVC)
     target_compile_options(${t} PRIVATE -DHAVE_STDARG_H -DHAVE_VSNPRINTF -J -W3 ${warn_WX})
@@ -194,6 +207,7 @@ endif()
 
 if(NOT UPX_CONFIG_DISABLE_ZSTD)
 set(t upx_vendor_zstd)
+upx_compile_target_debug_with_O2(${t})
 upx_sanitize_target(${t})
 target_compile_options(${t} PRIVATE -DDYNAMIC_BMI2=0 -DZSTD_DISABLE_ASM)
 if(MSVC)
@@ -212,9 +226,10 @@ if(GITREV_SHORT)
         target_compile_definitions(${t} PRIVATE UPX_VERSION_GIT_DESCRIBE="${GIT_DESCRIBE}")
     endif()
 endif()
+#upx_compile_target_debug_with_O2(${t})
 upx_sanitize_target(${t})
 if(MSVC)
-    target_compile_options(${t} PRIVATE -Zc:__cplusplus -EHsc -J -W4 ${warn_WX})
+    target_compile_options(${t} PRIVATE -EHsc -J -W4 ${warn_WX})
 else()
     target_compile_options(${t} PRIVATE
         -Wall -Wextra -Wcast-align -Wcast-qual -Wmissing-declarations -Wpointer-arith
@@ -225,14 +240,14 @@ if(NOT UPX_CONFIG_DISABLE_ZSTD)
     target_compile_definitions(${t} PRIVATE WITH_ZSTD=1)
     target_link_libraries(upx upx_vendor_zstd)
 endif()
-if(Threads_FOUND AND 0)
-    # for RANGELESS_FN_ENABLE_PARALLEL multithreading test
-    target_link_libraries(upx Threads::Threads)
-endif()
 
 #***********************************************************************
+# "ctest"
 # "make test"
+# "ninja test"
 #***********************************************************************
+
+if(NOT UPX_CONFIG_CMAKE_DISABLE_TEST)
 
 include(CTest)
 if(NOT CMAKE_CROSSCOMPILING)
@@ -263,10 +278,15 @@ if(NOT CMAKE_CROSSCOMPILING AND NOT UPX_CONFIG_DISABLE_SELF_PACK_TEST)
     upx_add_test(upx-run-packed     ./upx-packed${exe} --version-short)
 endif()
 
+endif() # UPX_CONFIG_CMAKE_DISABLE_TEST
+
 #***********************************************************************
-# "make install"
 # "cmake --install ."
+# "make install"
+# "ninja install"
 #***********************************************************************
+
+if(NOT UPX_CONFIG_CMAKE_DISABLE_INSTALL)
 
 # installation prefix and directories
 if(NOT CMAKE_INSTALL_PREFIX)
@@ -285,6 +305,8 @@ if(CMAKE_INSTALL_PREFIX AND DEFINED CMAKE_INSTALL_FULL_BINDIR)
     install(FILES doc/upx.1 DESTINATION "${CMAKE_INSTALL_FULL_MANDIR}/man1")
 endif()
 
+endif() # UPX_CONFIG_CMAKE_DISABLE_INSTALL
+
 #***********************************************************************
 # finally print some info about the build configuration
 #***********************************************************************
@@ -300,14 +322,13 @@ function(print_var)
         endif()
     endforeach()
 endfunction()
+if(NOT UPX_CONFIG_CMAKE_DISABLE_PRINT_INFO)
 print_var(CMAKE_HOST_SYSTEM_NAME CMAKE_HOST_SYSTEM_VERSION)
-print_var(CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION)
-print_var(CMAKE_CROSSCOMPILING)
+print_var(CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION CMAKE_CROSSCOMPILING)
 print_var(CMAKE_C_COMPILER_ID CMAKE_C_COMPILER_VERSION CMAKE_C_COMPILER_ARCHITECTURE_ID CMAKE_C_PLATFORM_ID CMAKE_C_COMPILER_ABI)
 print_var(CMAKE_CXX_COMPILER_ID CMAKE_CXX_COMPILER_VERSION CMAKE_CXX_COMPILER_ARCHITECTURE_ID CMAKE_CXX_PLATFORM_ID CMAKE_CXX_COMPILER_ABI)
-print_var(CMAKE_INSTALL_PREFIX)
-print_var(CMAKE_CONFIGURATION_TYPES)
-print_var(CMAKE_BUILD_TYPE)
+endif() # UPX_CONFIG_CMAKE_DISABLE_PRINT_INFO
+print_var(CMAKE_INSTALL_PREFIX CMAKE_CONFIGURATION_TYPES CMAKE_BUILD_TYPE)
 if (CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|Release)$")
     message(WARNING "WARNING: unsupported CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}; please use \"Debug\" or \"Release\"")
 endif()

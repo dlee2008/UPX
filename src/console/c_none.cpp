@@ -1,8 +1,9 @@
-/* dtx_.cpp -- DocTest eXtra checks
+/* c_none.cpp --
 
    This file is part of the UPX executable compressor.
 
    Copyright (C) 1996-2023 Markus Franz Xaver Johannes Oberhumer
+   Copyright (C) 1996-2023 Laszlo Molnar
    All Rights Reserved.
 
    UPX and the UCL library are free software; you can redistribute them
@@ -20,45 +21,43 @@
    If not, write to the Free Software Foundation, Inc.,
    59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
-   Markus F.X.J. Oberhumer
-   <markus@oberhumer.com>
+   Markus F.X.J. Oberhumer              Laszlo Molnar
+   <markus@oberhumer.com>               <ezerotven+github@gmail.com>
  */
 
-#if DEBUG && 0
-#ifndef WITH_RANGELESS_FN
-#define WITH_RANGELESS_FN 1
-#endif
-#endif
-
-#if WITH_RANGELESS_FN
-#define RANGELESS_FN_ENABLE_RUN_TESTS 1
-#if defined(__i386__) && defined(__MSDOS__) && defined(__DJGPP__) && defined(__GNUC__)
-#define RANGELESS_FN_ENABLE_PARALLEL 0
-#elif defined(__m68k__) && defined(__atarist__) && defined(__GNUC__)
-#define RANGELESS_FN_ENABLE_PARALLEL 0
-#else
-// disable multithreading for now; needs CMake find_package(Threads)
-#define RANGELESS_FN_ENABLE_PARALLEL 0
-#endif
-#endif // WITH_RANGELESS_FN
-
 #include "../conf.h"
+
+#if (USE_CONSOLE)
 
 /*************************************************************************
 //
 **************************************************************************/
 
-#if WITH_RANGELESS_FN && RANGELESS_FN_ENABLE_RUN_TESTS
-
-TEST_CASE("rangeless::fn") { CHECK_NOTHROW(rangeless::fn::impl::run_tests()); }
-
-#if RANGELESS_FN_ENABLE_PARALLEL
-TEST_CASE("rangeless::fn parallel") {
-    // CHECK_NOTHROW(rangeless::mt::impl::run_tests());
-    ACC_UNUSED_FUNC(rangeless::mt::impl::run_tests);
+static int init(FILE *f, int o, int now) {
+    UNUSED(f);
+    UNUSED(o);
+    UNUSED(now);
+    return CON_NONE;
 }
-#endif
 
-#endif // WITH_RANGELESS_FN
+static int set_fg(FILE *f, int fg) {
+    UNUSED(f);
+    UNUSED(fg);
+    return -1;
+}
+
+static void print0(FILE *f, const char *s) {
+    UNUSED(f);
+    UNUSED(s);
+}
+
+static bool intro(FILE *f) {
+    UNUSED(f);
+    return 0;
+}
+
+console_t console_none = {init, set_fg, print0, intro};
+
+#endif /* USE_CONSOLE */
 
 /* vim:set ts=4 sw=4 et: */
