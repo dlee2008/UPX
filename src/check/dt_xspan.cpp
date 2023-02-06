@@ -33,26 +33,28 @@
 **************************************************************************/
 
 TEST_CASE("raw_bytes ptr") {
-    upx_uint32_t *ptr = nullptr;
+    upx_uint16_t *ptr = nullptr;
     CHECK_NOTHROW(raw_bytes(ptr, 0));
     CHECK_THROWS(raw_bytes(ptr, 1));
     CHECK_THROWS(raw_index_bytes(ptr, 0, 0));
     CHECK_THROWS(raw_index_bytes(ptr, 1, 0));
     CHECK_THROWS(raw_index_bytes(ptr, 0, 1));
-    upx_uint32_t buf[4];
+    upx_uint16_t buf[4];
     ptr = buf;
-    CHECK(ptr_udiff_bytes(raw_index_bytes(ptr, 1, 1), ptr) == 4u);
+    CHECK(ptr_udiff_bytes(raw_index_bytes(ptr, 1, 1), ptr) == 2u);
+    CHECK(ptr_udiff_bytes(raw_index_bytes(ptr, 4, 0), ptr) == 8u);
 }
 
 TEST_CASE("raw_bytes bounded array") {
-    upx_uint32_t buf[4];
-    CHECK_NOTHROW(raw_bytes(buf, 16));
-    CHECK_THROWS(raw_bytes(buf, 17));
+    upx_uint16_t buf[4];
+    CHECK_NOTHROW(raw_bytes(buf, 8));
+    CHECK_THROWS(raw_bytes(buf, 9));
     CHECK_NOTHROW(raw_index_bytes(buf, 4, 0));
     CHECK_THROWS(raw_index_bytes(buf, 4, 1));
-    CHECK_NOTHROW(raw_index_bytes(buf, 3, 4));
-    CHECK_THROWS(raw_index_bytes(buf, 3, 5));
-    CHECK(ptr_udiff_bytes(raw_index_bytes(buf, 1, 1), buf) == 4u);
+    CHECK_NOTHROW(raw_index_bytes(buf, 3, 2));
+    CHECK_THROWS(raw_index_bytes(buf, 3, 3));
+    CHECK(ptr_udiff_bytes(raw_index_bytes(buf, 1, 1), buf) == 2u);
+    CHECK(ptr_udiff_bytes(raw_index_bytes(buf, 4, 0), buf) == 8u);
 }
 
 /*************************************************************************
@@ -86,14 +88,19 @@ TEST_CASE("basic xspan usage") {
         CHECK(x0 == z0p);
         CHECK(xp == z0s);
 
+        CHECK_NOTHROW(raw_bytes(a0, 0));
+        CHECK_THROWS(raw_bytes(a0, 1));
+        CHECK_THROWS(raw_index_bytes(a0, 0, 0));
         CHECK(raw_bytes(c0, 4) == buf);
         CHECK(raw_index_bytes(c0, 1, 3) == buf + 1);
         CHECK(raw_bytes(cp, 4) == buf);
         CHECK(raw_index_bytes(cp, 1, 3) == buf + 1);
         CHECK(raw_bytes(cs, 4) == buf);
         CHECK(raw_index_bytes(cs, 1, 3) == buf + 1);
+#if WITH_XSPAN >= 2
         CHECK_THROWS(raw_bytes(cs, 5));
         CHECK_THROWS(raw_index_bytes(cs, 1, 4));
+#endif
     }
 
     SUBCASE("XSPAN_x_VAR") {
@@ -126,14 +133,19 @@ TEST_CASE("basic xspan usage") {
         CHECK(x0 == z0p);
         CHECK(xp == z0s);
 
+        CHECK_NOTHROW(raw_bytes(a0, 0));
+        CHECK_THROWS(raw_bytes(a0, 1));
+        CHECK_THROWS(raw_index_bytes(a0, 0, 0));
         CHECK(raw_bytes(c0, 4) == buf);
         CHECK(raw_index_bytes(c0, 1, 3) == buf + 1);
         CHECK(raw_bytes(cp, 4) == buf);
         CHECK(raw_index_bytes(cp, 1, 3) == buf + 1);
         CHECK(raw_bytes(cs, 4) == buf);
         CHECK(raw_index_bytes(cs, 1, 3) == buf + 1);
+#if WITH_XSPAN >= 2
         CHECK_THROWS(raw_bytes(cs, 5));
         CHECK_THROWS(raw_index_bytes(cs, 1, 4));
+#endif
     }
 
     SUBCASE("xspan in class") {

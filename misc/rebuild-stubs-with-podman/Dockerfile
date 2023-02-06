@@ -1,5 +1,5 @@
 FROM docker.io/library/ubuntu:22.04
-ENV UPX_CONTAINER_IMAGE_NAME=upx-stubtools-20221212-v4
+ENV UPX_CONTAINER_IMAGE_NAME=upx-stubtools-20221212-v5
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 
@@ -7,17 +7,18 @@ ENV LANG=C.UTF-8
 RUN dpkg --add-architecture i386 \
     && apt-get update && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
-        aria2 ca-certificates git less libmpc3 libncurses5 make \
+        aria2 bash ca-certificates git less libmpc3 libncurses5 make \
         ncurses-term perl-base python2-minimal wget xz-utils \
         libc6:i386 zlib1g:i386 \
         # the following packages are not required for rebuilding the stubs, but
         # they do make the image much more convenient and also allow building
         # the full UPX binary inside the container via CMake:
-        7zip bfs bzip2 cmake curl elfutils fd-find file fzf g++ gdb gojq htop hyperfine \
-        jq libzstd-dev lsb-release lzip lzop ninja-build p7zip patch patchelf pax-utils \
-        ripgrep rsync screen universal-ctags unzip vim zip zlib1g-dev zsh zstd \
+        7zip bfs bzip2 chrpath cmake cpio curl elfutils fd-find file fzf g++ gdb gojq \
+        ht htop hyperfine jq libzstd-dev lsb-release lz4 lzip lzop moreutils ninja-build \
+        p7zip patch patchelf parallel pax-utils paxctl re2c ripgrep rsync \
+        screen universal-ctags unzip vim zip zlib1g-dev zsh zstd \
         # extra packages for compiling with "gcc -m32" and and "gcc -mx32":
-        gcc-multilib g++-multilib \
+        g++-multilib gcc-multilib \
     && true
 
 # manually install compat libs from Ubuntu 16.04; REQUIRED
@@ -40,18 +41,18 @@ RUN cd /root \
     && rm /root/bin-upx-20221212.tar.xz \
     && true
 
-# install pre-built binary UPX versions into /usr/local/bin; not required but convenient for testing
+# install official UPX release binaries into /usr/local/bin; not required but convenient for testing
 RUN cd /root \
     && wget -q https://github.com/upx/upx/releases/download/v3.91/upx-3.91-amd64_linux.tar.bz2 \
-    && for v in 3.92 3.93 3.94 3.95 3.96 4.0.0 4.0.1; do wget -q https://github.com/upx/upx/releases/download/v${v}/upx-${v}-amd64_linux.tar.xz; done \
+    && for v in 3.92 3.93 3.94 3.95 3.96 4.0.0 4.0.1 4.0.2; do wget -q https://github.com/upx/upx/releases/download/v${v}/upx-${v}-amd64_linux.tar.xz; done \
     && for f in ./upx-*.tar.*; do tar -xoaf $f; done \
-    && for v in 3.91 3.92 3.93 3.94 3.95 3.96 4.0.0 4.0.1; do d=upx-${v}-amd64_linux; ./$d/upx -qq -d $d/upx -o /usr/local/bin/upx-${v}; done \
+    && for v in 3.91 3.92 3.93 3.94 3.95 3.96 4.0.0 4.0.1 4.0.2; do d=upx-${v}-amd64_linux; ./$d/upx -qq -d $d/upx -o /usr/local/bin/upx-${v}; done \
     && rm -r ./upx-*.tar.* ./upx-*linux \
     && true
 
 # create default user upx 2000:2000
 RUN useradd upx -U --uid 2000 --shell /bin/bash -m \
-    && mkdir -p /home/upx/.local/bin /home/upx/src/upx \
+    && mkdir -p /home/upx/.cache/zig /home/upx/.local/bin /home/upx/src/upx \
     && ln -s /usr/local/bin/bin-upx-20221212 /home/upx/.local/bin/bin-upx \
     && chown -R upx:upx /home/upx \
     && true

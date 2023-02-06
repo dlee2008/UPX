@@ -57,13 +57,17 @@ endif
 
 # run the UPX testsuite
 # The expected (old) checksums are in $(top_srcdir)/.github/travis_testsuite_1-expected_sha256sums.sh
-# The   actual (new) checksums are in tmp-testsuite/testsuite_1/.sha256sums.recreate
+# The   actual (new) checksums are in ./tmp-testsuite/testsuite_1/.sha256sums.recreate
 ifneq ($(wildcard $(upx_testsuite_SRCDIR)/files/packed/.),)
 ifneq ($(wildcard $(top_srcdir)/.github/travis_testsuite_1.sh),)
-run-testsuite: export upx_exe                := $(top_srcdir)/build/release/upx
-run-testsuite: export upx_testsuite_SRCDIR   := $(upx_testsuite_SRCDIR)
-run-testsuite: export upx_testsuite_BUILDDIR := ./tmp-testsuite
-run-testsuite: $(top_srcdir)/build/release/upx PHONY
+run-testsuite: run-testsuite-release
+run-testsuite-%: export upx_testsuite_SRCDIR   := $(upx_testsuite_SRCDIR)
+run-testsuite-%: export upx_testsuite_BUILDDIR := ./tmp-testsuite
+run-testsuite-debug: export upx_exe := $(top_srcdir)/build/debug/upx
+run-testsuite-debug: PHONY $(top_srcdir)/build/debug/upx
+	time -p bash $(top_srcdir)/.github/travis_testsuite_1.sh
+run-testsuite-release: export upx_exe := $(top_srcdir)/build/release/upx
+run-testsuite-release: PHONY $(top_srcdir)/build/release/upx
 	time -p bash $(top_srcdir)/.github/travis_testsuite_1.sh
 endif
 endif
@@ -76,8 +80,8 @@ endif
 ifeq ($(shell uname),Linux)
 # Markus loves clang-format, but John hates it; find a compromise
 CLANG_FORMAT_EXCLUDE_FILES += conf.h miniacc.h version.h help.cpp
-CLANG_FORMAT_EXCLUDE_FILES += p_elf.h p_elf_enum.h p_lx_% p_mach% p_unix% p_vmli%
-CLANG_FORMAT_EXCLUDE_FILES += p_w32pe.cpp p_w64pep.cpp packer_c.cpp packer_f.cpp pefile%
+CLANG_FORMAT_EXCLUDE_FILES += p_elf.h p_elf_enum.h p_lx_% p_mach% p_unix% p_vmlin%
+CLANG_FORMAT_EXCLUDE_FILES += packer_c.cpp
 CLANG_FORMAT_EXCLUDE_FILES += compress/compress.h filter/filter_impl.cpp
 CLANG_FORMAT_FILES := $(sort $(wildcard *.[ch]* ../maint/src/*.[ch]* [cu]*/*.[ch]*))
 CLANG_FORMAT_FILES := $(filter-out $(CLANG_FORMAT_EXCLUDE_FILES),$(CLANG_FORMAT_FILES))

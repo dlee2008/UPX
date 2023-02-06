@@ -1,4 +1,4 @@
-/* p_exe.cpp --
+/* p_exe.cpp -- dos/exe executable format
 
    This file is part of the UPX executable compressor.
 
@@ -54,6 +54,8 @@ PackExe::PackExe(InputFile *f) : super(f) {
     use_clear_dirty_stack = false;
 }
 
+Linker *PackExe::newLinker() const { return new ElfLinkerX86(); }
+
 const int *PackExe::getCompressionMethods(int method, int level) const {
     bool small = ih_imagesize <= 256 * 1024;
     // disable lzma for "--brute" unless explicitly given "--lzma"
@@ -106,16 +108,16 @@ int PackExe::fillExeHeader(struct exe_header_t *eh) const {
 }
 
 void PackExe::addLoaderEpilogue(int flag) {
-    addLoader("EXEMAIN5", nullptr);
+    addLoader("EXEMAIN5");
     if (relocsize)
         addLoader(ph.u_len <= DI_LIMIT || (ph.u_len & 0x7fff) >= relocsize ? "EXENOADJ"
                                                                            : "EXEADJUS",
                   "EXERELO1", has_9a ? "EXEREL9A" : "", "EXERELO2",
-                  ih_exesize > 0xFE00 ? "EXEREBIG" : "", "EXERELO3", nullptr);
+                  ih_exesize > 0xFE00 ? "EXEREBIG" : "", "EXERELO3");
     addLoader("EXEMAIN8", device_driver ? "DEVICEEND" : "", (flag & SS) ? "EXESTACK" : "",
-              (flag & SP) ? "EXESTASP" : "", (flag & USEJUMP) ? "EXEJUMPF" : "", nullptr);
+              (flag & SP) ? "EXESTASP" : "", (flag & USEJUMP) ? "EXEJUMPF" : "");
     if (!(flag & USEJUMP))
-        addLoader(ih.cs ? "EXERCSPO" : "", "EXERETIP", nullptr);
+        addLoader(ih.cs ? "EXERCSPO" : "", "EXERETIP");
 
     linker->defineSymbol("original_cs", ih.cs);
     linker->defineSymbol("original_ip", ih.ip);
@@ -136,7 +138,7 @@ void PackExe::buildLoader(const Filter *) {
     if (M_IS_LZMA(ph.method)) {
         addLoader("LZMA_DEC00", opt->small ? "LZMA_DEC10" : "LZMA_DEC20", "LZMA_DEC30",
                   use_clear_dirty_stack ? "LZMA_DEC31" : "", "LZMA_DEC32",
-                  ph.u_len > 0xffff ? "LZMA_DEC33" : "", nullptr);
+                  ph.u_len > 0xffff ? "LZMA_DEC33" : "");
 
         addLoaderEpilogue(flag);
         defineDecompressorSymbols();
@@ -173,35 +175,35 @@ void PackExe::buildLoader(const Filter *) {
         initLoader(stub_i086_dos16_exe, sizeof(stub_i086_dos16_exe));
         // prepare loader
         if (device_driver)
-            addLoader("DEVICEENTRY,LZMADEVICE,DEVICEENTRY2", nullptr);
+            addLoader("DEVICEENTRY,LZMADEVICE,DEVICEENTRY2");
 
         linker->addSection("COMPRESSED_LZMA", compressed_lzma, c_len_lzma, 0);
-        addLoader("LZMAENTRY,NRV2B160,NRVDDONE,NRVDECO1,NRVGTD00,NRVDECO2", nullptr);
+        addLoader("LZMAENTRY,NRV2B160,NRVDDONE,NRVDECO1,NRVGTD00,NRVDECO2");
 
     } else if (device_driver)
-        addLoader("DEVICEENTRY,DEVICEENTRY2", nullptr);
+        addLoader("DEVICEENTRY,DEVICEENTRY2");
 
     addLoader("EXEENTRY", M_IS_LZMA(ph.method) && device_driver ? "LONGSUB" : "SHORTSUB",
               "JNCDOCOPY", relocsize ? "EXERELPU" : "", "EXEMAIN4",
               M_IS_LZMA(ph.method) ? "" : "EXEMAIN4B", "EXEMAIN4C",
               M_IS_LZMA(ph.method) ? "COMPRESSED_LZMA_START,COMPRESSED_LZMA" : "",
-              "+G5DXXXX,UPX1HEAD,EXECUTPO", nullptr);
+              "+G5DXXXX,UPX1HEAD,EXECUTPO");
     if (ph.method == M_NRV2B_8)
         addLoader("NRV2B16S", // decompressor
                   ph.u_len > DI_LIMIT ? "N2B64K01" : "", "NRV2BEX1",
                   opt->cpu == opt->CPU_8086 ? "N2BX8601" : "N2B28601", "NRV2BEX2",
                   opt->cpu == opt->CPU_8086 ? "N2BX8602" : "N2B28602", "NRV2BEX3",
-                  ph.c_len > 0xffff ? "N2B64K02" : "", "NRV2BEX9", nullptr);
+                  ph.c_len > 0xffff ? "N2B64K02" : "", "NRV2BEX9");
     else if (ph.method == M_NRV2D_8)
         addLoader("NRV2D16S", ph.u_len > DI_LIMIT ? "N2D64K01" : "", "NRV2DEX1",
                   opt->cpu == opt->CPU_8086 ? "N2DX8601" : "N2D28601", "NRV2DEX2",
                   opt->cpu == opt->CPU_8086 ? "N2DX8602" : "N2D28602", "NRV2DEX3",
-                  ph.c_len > 0xffff ? "N2D64K02" : "", "NRV2DEX9", nullptr);
+                  ph.c_len > 0xffff ? "N2D64K02" : "", "NRV2DEX9");
     else if (ph.method == M_NRV2E_8)
         addLoader("NRV2E16S", ph.u_len > DI_LIMIT ? "N2E64K01" : "", "NRV2EEX1",
                   opt->cpu == opt->CPU_8086 ? "N2EX8601" : "N2E28601", "NRV2EEX2",
                   opt->cpu == opt->CPU_8086 ? "N2EX8602" : "N2E28602", "NRV2EEX3",
-                  ph.c_len > 0xffff ? "N2E64K02" : "", "NRV2EEX9", nullptr);
+                  ph.c_len > 0xffff ? "N2E64K02" : "", "NRV2EEX9");
     else if M_IS_LZMA (ph.method)
         return;
     else
@@ -229,9 +231,7 @@ int PackExe::readFileHeader() {
         throwCantPack("illegal exe header");
     if (file_size_u < ih_exesize || ih_imagesize <= 0 || ih_imagesize > ih_exesize)
         throwCantPack("exe header corrupted");
-#if 0
-    printf("dos/exe header: %d %d %d\n", ih_exesize, ih_imagesize, ih_overlay);
-#endif
+    NO_printf("dos/exe header: %d %d %d\n", ih_exesize, ih_imagesize, ih_overlay);
     return UPX_F_DOS_EXE;
 }
 
@@ -538,8 +538,9 @@ void PackExe::pack(OutputFile *fo) {
     memcpy(loader, getLoader(), lsize);
     patchPackHeader(loader, e_len);
 
-    // fprintf(stderr,"\ne_len=%x d_len=%x c_len=%x oo=%x ulen=%x destp=%x copys=%x
-    // images=%x",e_len,d_len,packedsize,ph.overlap_overhead,ph.u_len,destpara,copysize,ih_imagesize);
+    NO_fprintf(stderr, "\ne_len=%x d_len=%x c_len=%x oo=%x ulen=%x destp=%x copys=%x images=%x",
+               e_len, d_len, packedsize, ph.overlap_overhead, ph.u_len, /*destpara*/ 0, copysize,
+               ih_imagesize);
 
     // write header + write loader + compressed file
 #if TESTING
@@ -552,13 +553,11 @@ void PackExe::pack(OutputFile *fo) {
     fo->write(loader + e_len, d_len); // decompressor
     fo->write(extra_info, eisize);
     assert(eisize <= 9);
-#if 0
-    printf("%-13s: program hdr  : %8ld bytes\n", getName(), (long) sizeof(oh));
-    printf("%-13s: entry        : %8ld bytes\n", getName(), (long) e_len);
-    printf("%-13s: compressed   : %8ld bytes\n", getName(), (long) packedsize);
-    printf("%-13s: decompressor : %8ld bytes\n", getName(), (long) d_len);
-    printf("%-13s: extra info   : %8ld bytes\n", getName(), (long) eisize);
-#endif
+    NO_printf("%-13s: program hdr  : %8u bytes\n", getName(), usizeof(oh));
+    NO_printf("%-13s: entry        : %8u bytes\n", getName(), e_len);
+    NO_printf("%-13s: compressed   : %8u bytes\n", getName(), packedsize);
+    NO_printf("%-13s: decompressor : %8u bytes\n", getName(), d_len);
+    NO_printf("%-13s: extra info   : %8u bytes\n", getName(), eisize);
 
     // verify
     verifyOverlappingDecompression();
@@ -614,12 +613,14 @@ void PackExe::unpack(OutputFile *fo) {
     unsigned relocn = 0;
     SPAN_S_VAR(upx_byte, relocs, obuf + ph.u_len, obuf);
 
-    MemBuffer wrkmem;
+    MemBuffer mb_wrkmem;
+    SPAN_0_VAR(upx_byte, wrkmem, nullptr);
     if (!(flag & NORELOC)) {
-        relocs -= get_le16(obuf + ph.u_len - 2);
+        relocs -= get_le16(obuf + (ph.u_len - 2));
         ph.u_len -= 2;
 
-        wrkmem.alloc(4 * MAXRELOCS);
+        mb_wrkmem.alloc(4 * MAXRELOCS);
+        wrkmem = mb_wrkmem; // => now a SPAN_S
         unsigned es = 0, ones = get_le16(relocs);
         const unsigned seghi = get_le16(relocs + 2);
         SPAN_S_VAR(const upx_byte, p, relocs + 4);
@@ -630,17 +631,17 @@ void PackExe::unpack(OutputFile *fo) {
             bool dorel = true;
             for (p += 4; ones && di < 0x10000; p++) {
                 if (dorel) {
-                    set_le16(wrkmem + 4 * relocn, di);
-                    set_le16(wrkmem + 2 + 4 * relocn++, es);
-                    // printf ("%x\n",es*16+di);
+                    set_le16(wrkmem + (4 * relocn), di);
+                    set_le16(wrkmem + (2 + 4 * relocn++), es);
+                    NO_printf("%x\n", es * 16 + di);
                 }
                 dorel = true;
                 if (*p == 0) {
                     SPAN_S_VAR(const upx_byte, q, obuf);
-
-                    for (q = obuf + es * 16 + di; !(*q == 0x9a && get_le16(q + 3) <= seghi); q++)
-                        ;
-                    di = ptr_diff_bytes(q, obuf + es * 16) + 3;
+                    for (q = obuf + (es * 16 + di); !(*q == 0x9a && get_le16(q + 3) <= seghi);
+                         q++) {
+                    }
+                    di = ptr_diff_bytes(q, obuf + (es * 16)) + 3;
                 } else if (*p == 1) {
                     di += 254;
                     if (di < 0x10000)
@@ -659,7 +660,7 @@ void PackExe::unpack(OutputFile *fo) {
     if (relocn) {
         oh.relocs = relocn;
         while (relocn & 3)
-            set_le32(wrkmem + 4 * relocn++, 0);
+            set_le32(wrkmem + (4 * relocn++), 0);
     }
 
     unsigned outputlen = ptr_udiff_bytes(relocs, obuf) + sizeof(oh) + relocn * 4;
@@ -702,13 +703,11 @@ void PackExe::unpack(OutputFile *fo) {
     fo->write(&oh, sizeof(oh));
     if (relocn)
         fo->write(wrkmem, relocn * 4);
-    fo->write(obuf, ptr_diff_bytes(relocs, obuf));
+    fo->write(obuf, ptr_udiff_bytes(relocs, obuf));
 
     // copy the overlay
     copyOverlay(fo, ih_overlay, obuf);
 }
-
-Linker *PackExe::newLinker() const { return new ElfLinkerX86(); }
 
 /*
 

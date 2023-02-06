@@ -37,9 +37,8 @@
 **************************************************************************/
 
 Packer::Packer(InputFile *f)
-    : bele(nullptr), fi(f), file_size(-1), ph_format(-1), ph_version(-1), ibufgood(0), uip(nullptr),
+    : bele(nullptr), fi(f), file_size(0), ph_format(-1), ph_version(-1), ibufgood(0), uip(nullptr),
       linker(nullptr), last_patch(nullptr), last_patch_len(0), last_patch_off(0) {
-    file_size = 0;
     if (fi != nullptr)
         file_size = fi->st_size();
     mem_size_assert(1, file_size_u);
@@ -653,7 +652,7 @@ int Packer::patchPackHeader(void *b, int blen) {
 
 bool Packer::getPackHeader(const void *b, int blen, bool allow_incompressible) {
     auto bb = (const upx_byte *) b;
-    if (!ph.fillPackHeader(SPAN_S_MAKE(const upx_byte, bb, blen), blen))
+    if (!ph.decodePackHeaderFromBuf(SPAN_S_MAKE(const upx_byte, bb, blen), blen))
         return false;
 
     if (ph.version > getVersion())
@@ -705,7 +704,7 @@ void Packer::checkAlreadyPacked(const void *b, int blen) {
     //   is a real PackHeader, e.g.
     //
     // PackHeader tmp;
-    // if (!tmp.fillPackHeader((unsigned char *)b + boff, blen - boff))
+    // if (!tmp.decodePackHeaderFromBuf((unsigned char *)b + boff, blen - boff))
     //    return;
     //
     // This also would require that the buffer in 'b' holds
@@ -1271,9 +1270,11 @@ void Packer::compressWithFilters(upx_bytep i_ptr,
     assert(nfilters < 256);
 #if 0
     printf("compressWithFilters: m(%d):", nmethods);
-    for (int i = 0; i < nmethods; i++) printf(" %#x", methods[i]);
+    for (int i = 0; i < nmethods; i++)
+        printf(" %#x", methods[i]);
     printf(" f(%d):", nfilters);
-    for (int i = 0; i < nfilters; i++) printf(" %#x", filters[i]);
+    for (int i = 0; i < nfilters; i++)
+        printf(" %#x", filters[i]);
     printf("\n");
 #endif
 
@@ -1295,9 +1296,7 @@ void Packer::compressWithFilters(upx_bytep i_ptr,
     int nfilters_success_total = 0;
     for (int mm = 0; mm < nmethods; mm++) // for all methods
     {
-#if 0  //{
-        printf("\nmethod %d (%d of %d)\n", methods[mm], 1+ mm, nmethods);
-#endif //}
+        NO_printf("\nmethod %d (%d of %d)\n", methods[mm], 1 + mm, nmethods);
         assert(isValidCompressionMethod(methods[mm]));
         unsigned hdr_c_len = 0;
         if (hdr_ptr != nullptr && hdr_len) {
@@ -1342,10 +1341,9 @@ void Packer::compressWithFilters(upx_bytep i_ptr,
                 continue;
             }
             // filter success
-#if 0
-            printf("\nfilter: id 0x%02x size %6d, calls %5d/%5d/%3d/%5d/%5d, cto 0x%02x\n",
-                   ft.id, ft.buf_len, ft.calls, ft.noncalls, ft.wrongcalls, ft.firstcall, ft.lastcall, ft.cto);
-#endif
+            NO_printf("\nfilter: id 0x%02x size %6d, calls %5d/%5d/%3d/%5d/%5d, cto 0x%02x\n",
+                      ft.id, ft.buf_len, ft.calls, ft.noncalls, ft.wrongcalls, ft.firstcall,
+                      ft.lastcall, ft.cto);
             if (nfilters_success_total != 0 && o_tmp == o_ptr) {
                 o_tmp_buf.allocForCompression(i_len);
                 o_tmp = o_tmp_buf;
@@ -1366,11 +1364,10 @@ void Packer::compressWithFilters(upx_bytep i_ptr,
                     lsize = getLoaderSize();
                     assert(lsize > 0);
                 }
-#if 0  //{
-                printf("\n%2d %02x: %d +%4d +%3d = %d  (best: %d +%4d +%3d = %d)\n", ph.method, ph.filter,
-                       ph.c_len, lsize, hdr_c_len, ph.c_len + lsize + hdr_c_len,
-                       best_ph.c_len, best_ph_lsize, best_hdr_c_len, best_ph.c_len + best_ph_lsize + best_hdr_c_len);
-#endif //}
+                NO_printf("\n%2d %02x: %d +%4d +%3d = %d  (best: %d +%4d +%3d = %d)\n", ph.method,
+                          ph.filter, ph.c_len, lsize, hdr_c_len, ph.c_len + lsize + hdr_c_len,
+                          best_ph.c_len, best_ph_lsize, best_hdr_c_len,
+                          best_ph.c_len + best_ph_lsize + best_hdr_c_len);
                 bool update = false;
                 if (ph.c_len + lsize + hdr_c_len < best_ph.c_len + best_ph_lsize + best_hdr_c_len)
                     update = true;
