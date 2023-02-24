@@ -94,7 +94,19 @@ forceinline pointer ensureBase() const {
 }
 
 public:
-inline ~CSelf() {}
+inline ~CSelf() {
+#if DEBUG
+    invalidate();
+#endif
+}
+noinline void invalidate() {
+    assertInvariants();
+    ptr = (pointer) (acc_uintptr_t) 16; // point to non-null invalid address
+    // ptr = (pointer) (void *) &ptr; // point to self
+    base = ptr;
+    size_in_bytes = 0;
+    assertInvariants();
+}
 // constructors from pointers
 CSelf(pointer first, XSpanCount count)
     : ptr(makePtr(first)), base(makeBase(first)), size_in_bytes(xspan_mem_size<T>(count.count)) {

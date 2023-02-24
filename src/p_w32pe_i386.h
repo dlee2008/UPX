@@ -1,4 +1,4 @@
-/* p_com.h -- dos/com executable format
+/* p_w32pe_i386.h --
 
    This file is part of the UPX executable compressor.
 
@@ -26,40 +26,38 @@
  */
 
 #pragma once
-#ifndef UPX_P_COM_H__
-#define UPX_P_COM_H__ 1
 
 /*************************************************************************
-// dos/com
+//
 **************************************************************************/
 
-class PackCom : public Packer {
-    typedef Packer super;
+class PackW32PeI386 final : public PeFile32 {
+    typedef PeFile32 super;
 
 public:
-    PackCom(InputFile *f) : super(f) { bele = &N_BELE_RTP::le_policy; }
-    virtual int getVersion() const override { return 13; }
-    virtual int getFormat() const override { return UPX_F_DOS_COM; }
-    virtual const char *getName() const override { return "dos/com"; }
-    virtual const char *getFullName(const options_t *) const override { return "i086-dos16.com"; }
+    PackW32PeI386(InputFile *f);
+    virtual ~PackW32PeI386();
+    virtual int getFormat() const override { return UPX_F_W32PE_I386; }
+    virtual const char *getName() const override { return isrtm ? "rtm32/pe" : "win32/pe"; }
+    virtual const char *getFullName(const options_t *) const override { return "i386-win32.pe"; }
     virtual const int *getCompressionMethods(int method, int level) const override;
     virtual const int *getFilters() const override;
 
+    virtual bool needForceOption() const override;
+    virtual void defineSymbols(unsigned ncsection, unsigned upxsection, unsigned sizeof_oh,
+                               unsigned isize_isplit, unsigned s1addr) override;
+    virtual void addNewRelocations(Reloc &, unsigned upxsection) override;
+    virtual void setOhDataBase(const pe_section_t *osection) override;
+    virtual void setOhHeaderSize(const pe_section_t *osection) override;
     virtual void pack(OutputFile *fo) override;
-    virtual void unpack(OutputFile *fo) override;
 
     virtual bool canPack() override;
-    virtual int canUnpack() override;
 
 protected:
-    virtual Linker *newLinker() const override;
-    void addFilter16(int filter_id);
-    // dos/sys will override these:
-    virtual unsigned getCallTrickOffset() const { return 0x100; }
-    virtual void buildLoader(const Filter *ft) override;
-    virtual void patchLoader(OutputFile *fo, byte *, int, unsigned);
-};
+    virtual int readFileHeader() override;
 
-#endif /* already included */
+    virtual void buildLoader(const Filter *ft) override;
+    virtual Linker *newLinker() const override;
+};
 
 /* vim:set ts=4 sw=4 et: */

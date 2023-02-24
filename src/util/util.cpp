@@ -46,7 +46,8 @@
 
 ACC_COMPILE_TIME_ASSERT_HEADER(UPX_RSIZE_MAX_MEM == UPX_RSIZE_MAX)
 ACC_COMPILE_TIME_ASSERT_HEADER(UPX_RSIZE_MAX_STR <= UPX_RSIZE_MAX / 256)
-ACC_COMPILE_TIME_ASSERT_HEADER(2ull * UPX_RSIZE_MAX * 9 / 8 + 16 * 1024 * 1024 < INT_MAX)
+ACC_COMPILE_TIME_ASSERT_HEADER(2ull * UPX_RSIZE_MAX * 9 / 8 + 256 * 1024 * 1024 < INT_MAX)
+ACC_COMPILE_TIME_ASSERT_HEADER(2ull * UPX_RSIZE_MAX * 10 / 8 + 128 * 1024 * 1024 <= INT_MAX + 1u)
 ACC_COMPILE_TIME_ASSERT_HEADER(5ull * UPX_RSIZE_MAX < UINT_MAX)
 ACC_COMPILE_TIME_ASSERT_HEADER(UPX_RSIZE_MAX >= 8192 * 65536)
 ACC_COMPILE_TIME_ASSERT_HEADER(UPX_RSIZE_MAX_STR >= 1024)
@@ -260,8 +261,8 @@ int find(const void *buf, int blen, const void *what, int wlen) {
     if (buf == nullptr || blen <= 0 || what == nullptr || wlen <= 0)
         return -1;
 
-    const unsigned char *b = (const unsigned char *) buf;
-    unsigned char first_byte = *(const unsigned char *) what;
+    const byte *b = (const byte *) buf;
+    byte first_byte = *(const byte *) what;
 
     blen -= wlen;
     for (int i = 0; i <= blen; i++, b++)
@@ -272,44 +273,44 @@ int find(const void *buf, int blen, const void *what, int wlen) {
 }
 
 int find_be16(const void *b, int blen, unsigned what) {
-    unsigned char w[2];
+    byte w[2];
     set_be16(w, what);
     return find(b, blen, w, 2);
 }
 
 int find_be32(const void *b, int blen, unsigned what) {
-    unsigned char w[4];
+    byte w[4];
     set_be32(w, what);
     return find(b, blen, w, 4);
 }
 
 int find_be64(const void *b, int blen, upx_uint64_t what) {
-    unsigned char w[8];
+    byte w[8];
     set_be64(w, what);
     return find(b, blen, w, 8);
 }
 
 int find_le16(const void *b, int blen, unsigned what) {
-    unsigned char w[2];
+    byte w[2];
     set_le16(w, what);
     return find(b, blen, w, 2);
 }
 
 int find_le32(const void *b, int blen, unsigned what) {
-    unsigned char w[4];
+    byte w[4];
     set_le32(w, what);
     return find(b, blen, w, 4);
 }
 
 int find_le64(const void *b, int blen, upx_uint64_t what) {
-    unsigned char w[8];
+    byte w[8];
     set_le64(w, what);
     return find(b, blen, w, 8);
 }
 
 TEST_CASE("find") {
     CHECK(find(nullptr, -1, nullptr, -1) == -1);
-    static const unsigned char b[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    static const byte b[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
     CHECK(find(b, 16, b, 0) == -1);
     for (int i = 0; i < 16; i++) {
         CHECK(find(b, 16, b + i, 1) == i);
@@ -329,7 +330,7 @@ TEST_CASE("find") {
 }
 
 int mem_replace(void *buf, int blen, const void *what, int wlen, const void *replacement) {
-    unsigned char *b = (unsigned char *) buf;
+    byte *b = (byte *) buf;
     int boff = 0;
     int n = 0;
 

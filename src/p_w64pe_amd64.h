@@ -1,4 +1,4 @@
-/* p_w64pep.h --
+/* p_w64pe_amd64.h --
 
    This file is part of the UPX executable compressor.
 
@@ -26,26 +26,24 @@
  */
 
 #pragma once
-#ifndef UPX_P_W64PEP_H__
-#define UPX_P_W64PEP_H__ 1
 
 /*************************************************************************
-// w64/pep
+//
 **************************************************************************/
 
-class PackW64Pep final : public PeFile64 {
+class PackW64PeAmd64 final : public PeFile64 {
     typedef PeFile64 super;
 
 public:
-    PackW64Pep(InputFile *f);
-    virtual ~PackW64Pep();
-    virtual int getFormat() const override { return UPX_F_WIN64_PEP; }
+    PackW64PeAmd64(InputFile *f);
+    virtual ~PackW64PeAmd64();
+    virtual int getFormat() const override { return UPX_F_W64PE_AMD64; }
     virtual const char *getName() const override { return "win64/pe"; }
     virtual const char *getFullName(const options_t *) const override { return "amd64-win64.pe"; }
     virtual const int *getCompressionMethods(int method, int level) const override;
     virtual const int *getFilters() const override;
 
-    virtual bool handleForceOption() override;
+    virtual bool needForceOption() const override;
     virtual void defineSymbols(unsigned ncsection, unsigned upxsection, unsigned sizeof_oh,
                                unsigned isize_isplit, unsigned s1addr) override;
     virtual void setOhDataBase(const pe_section_t *) override {}
@@ -58,7 +56,5 @@ protected:
     virtual void buildLoader(const Filter *ft) override;
     virtual Linker *newLinker() const override;
 };
-
-#endif /* already included */
 
 /* vim:set ts=4 sw=4 et: */

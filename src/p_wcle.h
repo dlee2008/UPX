@@ -26,8 +26,6 @@
  */
 
 #pragma once
-#ifndef UPX_P_WCLE_H__
-#define UPX_P_WCLE_H__ 1
 
 /*************************************************************************
 // watcom/le
@@ -87,7 +85,5 @@ protected:
     bool has_extra_code;
     unsigned neweip;
 };
-
-#endif /* already included */
 
 /* vim:set ts=4 sw=4 et: */

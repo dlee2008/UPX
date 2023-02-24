@@ -1,4 +1,4 @@
-/* p_w32pe.h --
+/* p_wince_arm.h --
 
    This file is part of the UPX executable compressor.
 
@@ -26,29 +26,31 @@
  */
 
 #pragma once
-#ifndef UPX_P_W32PE_H__
-#define UPX_P_W32PE_H__ 1
 
 /*************************************************************************
-// w32/pe
+//
 **************************************************************************/
 
-class PackW32Pe final : public PeFile32 {
+class PackWinCeArm final : public PeFile32 {
     typedef PeFile32 super;
 
 public:
-    PackW32Pe(InputFile *f);
-    virtual ~PackW32Pe();
-    virtual int getFormat() const override { return UPX_F_WIN32_PE; }
-    virtual const char *getName() const override { return isrtm ? "rtm32/pe" : "win32/pe"; }
-    virtual const char *getFullName(const options_t *) const override { return "i386-win32.pe"; }
+    PackWinCeArm(InputFile *f);
+    virtual ~PackWinCeArm();
+    virtual int getFormat() const override { return UPX_F_WINCE_ARM; }
+    virtual const char *getName() const override { return "wince/arm"; }
+    virtual const char *getFullName(const options_t *) const override { return "arm-wince.pe"; }
     virtual const int *getCompressionMethods(int method, int level) const override;
     virtual const int *getFilters() const override;
+    virtual void defineFilterSymbols(const Filter *) override {}
 
-    virtual bool handleForceOption() override;
+    virtual bool needForceOption() const override;
+    virtual void callCompressWithFilters(Filter &, int filter_strategy,
+                                         unsigned ih_codebase) override;
     virtual void defineSymbols(unsigned ncsection, unsigned upxsection, unsigned sizeof_oh,
                                unsigned isize_isplit, unsigned s1addr) override;
     virtual void addNewRelocations(Reloc &, unsigned upxsection) override;
+    virtual unsigned getProcessImportParam(unsigned upxsection) override;
     virtual void setOhDataBase(const pe_section_t *osection) override;
     virtual void setOhHeaderSize(const pe_section_t *osection) override;
     virtual void pack(OutputFile *fo) override;
@@ -56,12 +58,16 @@ public:
     virtual bool canPack() override;
 
 protected:
-    virtual int readFileHeader() override;
-
     virtual void buildLoader(const Filter *ft) override;
     virtual Linker *newLinker() const override;
-};
 
-#endif /* already included */
+    virtual const char *kernelDll() const override { return "COREDLL.dll"; }
+    virtual void processImports2(unsigned, unsigned) override;
+    virtual void addStubImports() override;
+
+    virtual void processTls(Interval *) override;
+
+    bool use_thumb_stub = false;
+};
 
 /* vim:set ts=4 sw=4 et: */
