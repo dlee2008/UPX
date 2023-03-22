@@ -46,7 +46,7 @@ Packer::Packer(InputFile *f)
     mem_clear(&ph, sizeof(ph));
 }
 
-Packer::~Packer() {
+Packer::~Packer() noexcept {
     delete uip;
     uip = nullptr;
     delete linker;
@@ -834,27 +834,26 @@ static const char *getIdentstr(unsigned *size, int small) {
         "\n";
     static char identtiny[] = UPX_VERSION_STRING4;
 
-    static int done;
-    if (!done && (opt->debug.fake_stub_version[0] || opt->debug.fake_stub_year[0])) {
-        struct strinfo_t {
-            char *s;
-            int size;
-        };
-        static const strinfo_t strlist[] = {{identbig, (int) sizeof(identbig)},
-                                            {identsmall, (int) sizeof(identsmall)},
-                                            {identtiny, (int) sizeof(identtiny)},
-                                            {nullptr, 0}};
-        const strinfo_t *iter;
-
-        for (iter = strlist; iter->s; ++iter) {
-            if (opt->debug.fake_stub_version[0])
-                mem_replace(iter->s, iter->size, UPX_VERSION_STRING4, 4,
-                            opt->debug.fake_stub_version);
-            if (opt->debug.fake_stub_year[0])
-                mem_replace(iter->s, iter->size, UPX_VERSION_YEAR, 4, opt->debug.fake_stub_year);
+    static upx_std_once_flag init_done;
+    upx_std_call_once(init_done, []() noexcept {
+        if (opt->debug.fake_stub_version[0] || opt->debug.fake_stub_year[0]) {
+            struct Ident {
+                char *s;
+                int len;
+            };
+            static const Ident idents[] = {{identbig, (int) sizeof(identbig) - 1},
+                                           {identsmall, (int) sizeof(identsmall) - 1},
+                                           {identtiny, (int) sizeof(identtiny) - 1},
+                                           {nullptr, 0}};
+            for (const Ident *iter = idents; iter->s; ++iter) {
+                if (opt->debug.fake_stub_version[0])
+                    mem_replace(iter->s, iter->len, UPX_VERSION_STRING4, 4,
+                                opt->debug.fake_stub_version);
+                if (opt->debug.fake_stub_year[0])
+                    mem_replace(iter->s, iter->len, UPX_VERSION_YEAR, 4, opt->debug.fake_stub_year);
+            }
         }
-        done = 1;
-    }
+    });
 
     if (small < 0)
         small = opt->small;
@@ -1093,13 +1092,13 @@ done:
 }
 
 void Packer::compressWithFilters(byte *i_ptr,
-                                 unsigned const i_len, // written and restored by filters
+                                 const unsigned i_len, // written and restored by filters
                                  byte *const o_ptr,    // where to put compressed output
                                  byte *f_ptr,
-                                 unsigned const f_len, // subset of [*i_ptr, +i_len)
-                                 byte *const hdr_ptr, unsigned const hdr_len,
+                                 const unsigned f_len, // subset of [*i_ptr, +i_len)
+                                 byte *const hdr_ptr, const unsigned hdr_len,
                                  Filter *const parm_ft, // updated
-                                 unsigned const overlap_range,
+                                 const unsigned overlap_range,
                                  upx_compress_config_t const *const cconf,
                                  int filter_strategy, // in+out for prepareFilters
                                  bool const inhibit_compression_check) {

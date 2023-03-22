@@ -26,43 +26,14 @@
  */
 
 #pragma once
-#ifndef UPX_CONF_H__
-#define UPX_CONF_H__ 1
-
-#if !(__cplusplus+0 >= 201703L)
-#  error "C++ 17 is required"
-#endif
-
-#include "version.h"
-
-#if !defined(_FILE_OFFSET_BITS)
-#  define _FILE_OFFSET_BITS 64
-#endif
-#if defined(_WIN32) && defined(__MINGW32__) && defined(__GNUC__)
-#  if !defined(_USE_MINGW_ANSI_STDIO)
-#    define _USE_MINGW_ANSI_STDIO 1
-#  endif
-#endif
-
 
 /*************************************************************************
-// ACC and system includes
+// init
 **************************************************************************/
 
-#ifndef ACC_CFG_USE_NEW_STYLE_CASTS
-#define ACC_CFG_USE_NEW_STYLE_CASTS 1
-#endif
-#define ACC_CFG_PREFER_TYPEOF_ACC_INT32E_T ACC_TYPEOF_INT
-#define ACC_CFG_PREFER_TYPEOF_ACC_INT64E_T ACC_TYPEOF_LONG_LONG
-#include "miniacc.h"
-#if !(ACC_CC_CLANG || ACC_CC_GNUC || ACC_CC_MSC)
-   // other compilers may work, but we're NOT interested into supporting them
-#  error "only clang, gcc and msvc are officially supported"
-#endif
-// UPX sanity checks for a sane compiler
-#if !defined(UINT_MAX) || (UINT_MAX != 0xffffffffL)
-#  error "UINT_MAX"
-#endif
+#include "headers.h"
+#include "version.h"
+
 ACC_COMPILE_TIME_ASSERT_HEADER(CHAR_BIT == 8)
 ACC_COMPILE_TIME_ASSERT_HEADER(sizeof(short) == 2)
 ACC_COMPILE_TIME_ASSERT_HEADER(sizeof(int) == 4)
@@ -100,82 +71,57 @@ ACC_COMPILE_TIME_ASSERT_HEADER((char)(-1) == 255) // -funsigned-char
 #  pragma warning(error: 4805)
 #endif
 #endif // !UPX_CONFIG_DISABLE_WSTRICT && !UPX_CONFIG_DISABLE_WERROR
-// disable some warnings
-#if (ACC_CC_MSC)
-#  pragma warning(disable: 4244) // -Wconversion
-#  pragma warning(disable: 4267) // -Wconversion
-#  pragma warning(disable: 4820) // padding added after data member
-#endif
 
-#undef snprintf
-#undef vsnprintf
-#define HAVE_STDINT_H 1
-#define ACC_WANT_ACC_INCD_H 1
-#define ACC_WANT_ACC_INCE_H 1
-#define ACC_WANT_ACC_LIB_H 1
-#define ACC_WANT_ACC_CXX_H 1
-#include "miniacc.h"
-#if (ACC_CC_MSC)
-#  include <intrin.h>
-#endif
-
-// C++ system headers
-#include <exception>
-#include <new>
-#include <type_traits>
-#include <typeinfo>
-#if __STDC_NO_ATOMICS__ || 1
-// UPX currently does not use multithreading
+// multithreading (UPX currently does not use multithreading)
+#if (WITH_THREADS)
+#define upx_thread_local        thread_local
+#define upx_std_atomic(Type)    std::atomic<Type>
+#define upx_std_once_flag       std::once_flag
+#define upx_std_call_once       std::call_once
+#else
+#define upx_thread_local        /*empty*/
 #define upx_std_atomic(Type)    Type
-//#define upx_std_atomic(Type)    typename std::add_volatile<Type>::type
 #define upx_std_once_flag       upx_std_atomic(size_t)
 template <class NoexceptCallable>
 inline void upx_std_call_once(upx_std_once_flag &flag, NoexceptCallable &&f) {
     if (__acc_unlikely(!flag)) { flag = 1; f(); }
 }
-#else
-#include <atomic>
-#define upx_std_atomic(Type)    std::atomic<Type>
-#include <mutex>
-#define upx_std_once_flag       std::once_flag
-#define upx_std_call_once       std::call_once
-#endif
-
-// C++ submodule headers
-#include <doctest/doctest/parts/doctest_fwd.h>
-#if WITH_BOOST_PFR
-#  include <sstream>
-#  include <boost/pfr/io.hpp>
-#endif
-#if WITH_RANGELESS_FN
-#  include <rangeless/include/fn.hpp>
-#endif
-#ifndef WITH_VALGRIND
-#  define WITH_VALGRIND 1
-#endif
-#if defined(__SANITIZE_ADDRESS__) || defined(_WIN32) || !defined(__GNUC__)
-#  undef WITH_VALGRIND
-#endif
-#if (WITH_VALGRIND)
-#  include <valgrind/include/valgrind/memcheck.h>
-#endif
-
-// IMPORTANT: unconditionally enable assertions
-#undef NDEBUG
-#include <assert.h>
+#endif // WITH_THREADS
 
 // <type_traits> C++20 std::is_bounded_array
 template <class T>
-struct std_is_bounded_array : public std::false_type {};
+struct upx_std_is_bounded_array : public std::false_type {};
 template <class T, size_t N>
-struct std_is_bounded_array<T[N]> : public std::true_type {};
+struct upx_std_is_bounded_array<T[N]> : public std::true_type {};
+template <class T>
+inline constexpr bool upx_std_is_bounded_array_v = upx_std_is_bounded_array<T>::value;
 
+// see bele.h
+template <class T>
+struct upx_is_integral : public std::is_integral<T> {};
+template <class T>
+inline constexpr bool upx_is_integral_v = upx_is_integral<T>::value;
+
+#if (ACC_ARCH_M68K && ACC_OS_TOS && ACC_CC_GNUC) && defined(__MINT__)
+// horrible hack for broken compiler
+#define upx_fake_alignas_1      __attribute__((__aligned__(1),__packed__))
+#define upx_fake_alignas_16     __attribute__((__aligned__(2))) // object file maximum 2 ???
+#define upx_fake_alignas__(a)   upx_fake_alignas_ ## a
+#define alignas(x)              upx_fake_alignas__(x)
+#endif
 
 /*************************************************************************
 // core
 **************************************************************************/
 
-// intergral types
+// protect against integer overflows and malicious header fields
+// see C 11 standard, Annex K
+typedef size_t upx_rsize_t;
+#define UPX_RSIZE_MAX       UPX_RSIZE_MAX_MEM
+#define UPX_RSIZE_MAX_MEM   (768 * 1024 * 1024)   // DO NOT CHANGE !!!
+#define UPX_RSIZE_MAX_STR   (256 * 1024)
+
+// integral types
 typedef acc_int8_t      upx_int8_t;
 typedef acc_uint8_t     upx_uint8_t;
 typedef acc_int16_t     upx_int16_t;
@@ -186,16 +132,17 @@ typedef acc_int64_t     upx_int64_t;
 typedef acc_uint64_t    upx_uint64_t;
 typedef acc_uintptr_t   upx_uintptr_t;
 
+// convention: use "byte" when dealing with data; use "char/uchar" when dealing
+// with strings; use "upx_uint8_t" when dealing with small integers
 typedef unsigned char   byte;
 #define upx_byte        byte
 #define upx_bytep       byte *
-
-// protect against integer overflows and malicious header fields
-// see C 11 standard, Annex K
-typedef size_t upx_rsize_t;
-#define UPX_RSIZE_MAX       UPX_RSIZE_MAX_MEM
-#define UPX_RSIZE_MAX_MEM   (768 * 1024 * 1024)   // DO NOT CHANGE !!!
-#define UPX_RSIZE_MAX_STR   (1024 * 1024)
+typedef unsigned char   uchar;
+// use "charptr" when dealing with pointer arithmetics
+#define charptr         upx_charptr_unit_type *
+// upx_charptr_unit_type is some opaque type with sizeof(type) == 1
+struct alignas(1) upx_charptr_unit_type { char dummy; };
+ACC_COMPILE_TIME_ASSERT_HEADER(sizeof(upx_charptr_unit_type) == 1)
 
 // using the system off_t was a bad idea even back in 199x...
 typedef upx_int64_t upx_off_t;
@@ -244,8 +191,8 @@ typedef upx_int64_t upx_off_t;
 #endif
 #if (ACC_OS_DOS32) && defined(__DJGPP__)
 #  undef sopen
-#  undef __unix__
 #  undef __unix
+#  undef __unix__
 #endif
 
 #ifndef STDIN_FILENO
@@ -304,7 +251,7 @@ typedef upx_int64_t upx_off_t;
 #  endif
 #endif
 
-// avoid warnings about shadowing global functions
+// avoid warnings about shadowing global symbols
 #undef _base
 #undef basename
 #undef index
@@ -391,14 +338,6 @@ inline void NO_fprintf(FILE *, const char *, ...) {}
 #define __packed_struct(s)      struct alignas(1) s {
 #define __packed_struct_end()   };
 
-#if (ACC_ARCH_M68K && ACC_OS_TOS && ACC_CC_GNUC) && defined(__MINT__)
-// horrible hack for broken compiler
-#define upx_fake_alignas_1      __attribute__((__aligned__(1),__packed__))
-#define upx_fake_alignas_16     __attribute__((__aligned__(2))) // object file maximum 2 ???
-#define upx_fake_alignas__(a)   upx_fake_alignas_ ## a
-#define alignas(x)              upx_fake_alignas__(x)
-#endif
-
 #define COMPILE_TIME_ASSERT_ALIGNOF_USING_SIZEOF__(a,b) { \
      typedef a acc_tmp_a_t; typedef b acc_tmp_b_t; \
      struct alignas(1) acc_tmp_t { acc_tmp_b_t x; acc_tmp_a_t y; acc_tmp_b_t z; }; \
@@ -426,15 +365,13 @@ inline const T& UPX_MAX(const T& a, const T& b) { if (a < b) return b; return a;
 template <class T>
 inline const T& UPX_MIN(const T& a, const T& b) { if (a < b) return a; return b; }
 
-template <size_t TypeSize>
-struct USizeOfTypeImpl {
-    static forceinline constexpr unsigned value() {
-        COMPILE_TIME_ASSERT(TypeSize >= 1 && TypeSize <= 64 * 1024) // arbitrary limit
-        return ACC_ICONV(unsigned, TypeSize);
-    }
+template <size_t Size>
+struct UnsignedSizeOf {
+    static_assert(Size >= 1 && Size <= UPX_RSIZE_MAX_MEM);
+    static constexpr unsigned value = unsigned(Size);
 };
-#define usizeof(type)   (USizeOfTypeImpl<sizeof(type)>::value())
-ACC_COMPILE_TIME_ASSERT_HEADER(usizeof(int) == 4)
+#define usizeof(expr)   (UnsignedSizeOf<sizeof(expr)>::value)
+ACC_COMPILE_TIME_ASSERT_HEADER(usizeof(int) == sizeof(int))
 
 // An Array allocates memory on the heap, and automatically
 // gets destructed when leaving scope or on exceptions.
@@ -442,16 +379,16 @@ ACC_COMPILE_TIME_ASSERT_HEADER(usizeof(int) == 4)
     MemBuffer var ## _membuf(mem_size(sizeof(type), size)); \
     type * const var = ACC_STATIC_CAST(type *, var ## _membuf.getVoidPtr())
 
-#define ByteArray(var, size)    Array(unsigned char, var, size)
+#define ByteArray(var, size)    Array(byte, var, size)
 
 
 class noncopyable
 {
 protected:
-    inline noncopyable() {}
-    inline ~noncopyable() {}
+    inline noncopyable() noexcept {}
+    inline ~noncopyable() noexcept {}
 private:
-    noncopyable(const noncopyable &) DELETED_FUNCTION; // copy constuctor
+    noncopyable(const noncopyable &) DELETED_FUNCTION; // copy constructor
     noncopyable& operator=(const noncopyable &) DELETED_FUNCTION; // copy assignment
     noncopyable(noncopyable &&) DELETED_FUNCTION; // move constructor
     noncopyable& operator=(noncopyable &&) DELETED_FUNCTION; // move assignment
@@ -466,7 +403,7 @@ constexpr bool string_eq(const char *a, const char *b) {
     return *a == *b && (*a == '\0' || string_eq(a + 1, b + 1));
 }
 constexpr bool string_lt(const char *a, const char *b) {
-    return (unsigned char)*a < (unsigned char)*b || (*a != '\0' && *a == *b && string_lt(a + 1, b + 1));
+    return (uchar)*a < (uchar)*b || (*a != '\0' && *a == *b && string_lt(a + 1, b + 1));
 }
 constexpr bool string_ne(const char *a, const char *b) {
     return !string_eq(a, b);
@@ -644,7 +581,7 @@ struct upx_callback_t
     upx_progress_func_t nprogress;
     void *user;
 
-    void reset() { memset(this, 0, sizeof(*this)); }
+    void reset() noexcept { memset(this, 0, sizeof(*this)); }
 };
 
 
@@ -670,7 +607,7 @@ struct OptVar
         assertValue(v);
     }
 
-    OptVar() : v(default_value), is_set(false) { }
+    OptVar() noexcept : v(default_value), is_set(false) { }
     OptVar& operator= (const T &other) {
         assertValue(other);
         v = other;
@@ -678,8 +615,8 @@ struct OptVar
         return *this;
     }
 
-    void reset() { v = default_value; is_set = false; }
-    operator T () const { return v; }
+    void reset() noexcept { v = default_value; is_set = false; }
+    operator T () const noexcept { return v; }
 
     T v;
     bool is_set;
@@ -818,25 +755,15 @@ struct upx_compress_result_t
 // globals
 **************************************************************************/
 
-#include "util/snprintf.h"   // must get included first!
-#include "options.h"
-#include "except.h"
-#include "bele.h"
-#include "console/console.h"
-#include "util/util.h"
-
 // classes
 class ElfLinker;
 typedef ElfLinker Linker;
+class Throwable;
 
 // util/membuffer.h
 class MemBuffer;
 void *membuffer_get_void_ptr(MemBuffer &mb);
 unsigned membuffer_get_size(MemBuffer &mb);
-
-// xspan
-#include "util/raw_bytes.h"
-#include "util/xspan.h"
 
 // util/dt_check.cpp
 void upx_compiler_sanity_check();
@@ -870,7 +797,7 @@ int do_files(int i, int argc, char *argv[]);
 
 // help.cpp
 extern const char gitrev[];
-void show_head();
+void show_header();
 void show_help(int verbose=0);
 void show_license();
 void show_usage();
@@ -898,12 +825,15 @@ int upx_test_overlap       ( const upx_bytep buf,
                              const upx_compress_result_t *cresult );
 
 
-#if (ACC_OS_CYGWIN || ACC_OS_DOS16 || ACC_OS_DOS32 || ACC_OS_EMX || ACC_OS_OS2 || ACC_OS_OS216 || ACC_OS_WIN16 || ACC_OS_WIN32 || ACC_OS_WIN64)
-#  if defined(INVALID_HANDLE_VALUE) || defined(MAKEWORD) || defined(RT_CURSOR)
-#    error "something pulled in <windows.h>"
-#  endif
-#endif
+#include "util/snprintf.h"   // must get included first!
+#include "options.h"
+#include "except.h"
+#include "bele.h"
+#include "console/console.h"
+#include "util/util.h"
+// xspan
+#include "util/raw_bytes.h"
+#include "util/xspan.h"
 
-#endif /* already included */
 
 /* vim:set ts=4 sw=4 et: */

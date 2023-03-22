@@ -41,7 +41,7 @@ public:
     virtual int getVersion() const override { return 13; }
     virtual int getFormat() const override { return UPX_F_TMT_ADAM; }
     virtual const char *getName() const override { return "tmt/adam"; }
-    virtual const char *getFullName(const options_t *) const override {
+    virtual const char *getFullName(const Options *) const override {
         return "i386-dos32.tmt.adam";
     }
     virtual const int *getCompressionMethods(int method, int level) const override;
@@ -65,11 +65,11 @@ protected:
     int big_relocs = 0;
 
     struct alignas(1) tmt_header_t {
-        char _[16]; // signature,linkerversion,minversion,exesize,imagestart
+        byte _[16]; // signature,linkerversion,minversion,exesize,imagestart
         LE32 imagesize;
-        char __[4]; // initial memory
+        byte __[4]; // initial memory
         LE32 entry;
-        char ___[12]; // esp,numfixups,flags
+        byte ___[12]; // esp,numfixups,flags
         LE32 relocsize;
     };
     tmt_header_t ih, oh;

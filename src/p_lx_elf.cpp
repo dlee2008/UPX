@@ -1370,6 +1370,7 @@ PackLinuxElf32::buildLinuxLoader(
             len += snprintf(&sec[len], sizeof(sec) - len, ",%s", "LZMA_ELF00,LZMA_DEC20,LZMA_DEC30");
         }
         len += snprintf(&sec[len], sizeof(sec) - len, ",%s", "EXP_TAIL,SO_TAIL,SO_MAIN");
+        (void)len;  // Pacify the anal-retentive static analyzer which hates a good idiom.
         addLoader(sec, nullptr);
         relocateLoader();
         {
@@ -5507,6 +5508,14 @@ void PackLinuxElf32::pack4(OutputFile *fo, Filter &ft)
                 set_te32(&phdro->p_flags, Elf32_Phdr::PF_X | get_te32(&phdro->p_flags));
             }
         }
+        if (!sec_arm_attr && !saved_opt_android_shlib) {
+            // Make it abunantly clear that there are no Elf32_Shdr in this shlib
+            Elf32_Ehdr *ehdro = (Elf32_Ehdr *)lowmem.getVoidPtr();
+            ehdro->e_shoff = 0;
+            ehdro->e_shentsize = 0;
+            ehdro->e_shnum = 0;
+            ehdro->e_shstrndx = 0;
+        }
         fo->rewrite(&lowmem[0], sizeof(ehdri) + e_phnum * sizeof(*phdri));
         fo->seek(linfo_off, SEEK_SET);
         fo->rewrite(&linfo, sizeof(linfo));  // new info: l_checksum, l_size
@@ -5581,6 +5590,13 @@ void PackLinuxElf64::pack4(OutputFile *fo, Filter &ft)
                 set_te64(&phdro->p_flags, Elf64_Phdr::PF_X | get_te64(&phdro->p_flags));
             }
         }
+        // Make it abundantly clear that there are no Elf64_Shdr in a compressed shlib
+        Elf64_Ehdr *ehdro = (Elf64_Ehdr *)lowmem.getVoidPtr();
+        ehdro->e_shoff = 0;
+        ehdro->e_shentsize = 0;
+        ehdro->e_shnum = 0;
+        ehdro->e_shstrndx = 0;
+
         fo->rewrite(&lowmem[0], sizeof(ehdri) + e_phnum * sizeof(*phdri));
         fo->seek(linfo_off, SEEK_SET);
         fo->rewrite(&linfo, sizeof(linfo));  // new info: l_checksum, l_size
@@ -6388,7 +6404,7 @@ void PackLinuxElf64::un_DT_INIT(
             n_plt = 3+ (dt_pltrelsz / sizeof(Elf64_Rela));  // FIXME: "3+"
         };  break;
 
-        case Elf64_Dyn::DT_PLTGOT:   { plt_va = dt_pltgot = val;}
+        case Elf64_Dyn::DT_PLTGOT:   { plt_va = dt_pltgot = val; (void)dt_pltgot;}
         // FALL THROUGH
         case Elf64_Dyn::DT_PREINIT_ARRAY:
         case Elf64_Dyn::DT_INIT_ARRAY:
