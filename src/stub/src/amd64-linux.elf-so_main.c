@@ -32,6 +32,9 @@
 
 #include "include/linux.h"
 
+// Pprotect is mprotect, but page-aligned on the lo end (Linux requirement)
+unsigned Pprotect(void *, size_t, unsigned);
+
 extern void f_int3(int arg);
 
 #define DEBUG 0
@@ -239,7 +242,7 @@ make_hatch_x86_64(
             hatch[0] = 0x5e5f050f;  // syscall; pop %arg1{%rdi}; pop %arg2{%rsi}
             ((short *)hatch)[2] = 0xc35a;  // pop %arg3{%rdx}; ret
             if (xprot) {
-                mprotect(hatch, 6, PROT_EXEC|PROT_READ);
+                Pprotect(hatch, 6, PROT_EXEC|PROT_READ);
             }
         }
         else {
@@ -286,7 +289,7 @@ make_hatch_ppc64(
             hatch[2]= 0x38800000;  // li r4,0
             hatch[3]= 0x4e800020;  // blr
             if (xprot) {
-                mprotect(hatch, 3*sizeof(unsigned), PROT_EXEC|PROT_READ);
+                Pprotect(hatch, 3*sizeof(unsigned), PROT_EXEC|PROT_READ);
             }
         }
         else {
@@ -330,7 +333,7 @@ make_hatch_arm64(
             hatch[2] = 0xa8c207e0;  // ldp x0,x1,[sp], 4*8
             hatch[3] = 0xd61f03c0;  // br x30
             if (xprot) {
-                mprotect(hatch, 2*sizeof(unsigned), PROT_EXEC|PROT_READ);
+                Pprotect(hatch, 2*sizeof(unsigned), PROT_EXEC|PROT_READ);
             }
         }
         else {
@@ -377,7 +380,7 @@ make_hatch_arm64(
 
 #undef PAGE_MASK
 static unsigned long
-get_PAGE_MASK(void)
+get_PAGE_MASK(void)  // the mask which KEEPS the page, discards the offset
 {
     int fd = openat(0, addr_string("/proc/self/auxv"), O_RDONLY, 0);
     unsigned long rv = ~0xffful;  // default to (PAGE_SIZE == 4KiB)
@@ -386,7 +389,7 @@ get_PAGE_MASK(void)
     close(fd);
     Elf64_auxv_t *ptr; for (ptr = &data[0]; ptr < end ; ++ptr) {
         if (AT_PAGESZ == ptr->a_type) {
-            rv = ~(-1+ ptr->a_un.a_val);
+            rv = (0u - ptr->a_un.a_val);
             break;
         }
     }
@@ -439,15 +442,19 @@ upx_so_main(  // returns &escape_hatch
 {
     unsigned long const PAGE_MASK = get_PAGE_MASK();
     char *const va_load = (char *)&so_info->off_reloc - so_info->off_reloc;
-    unsigned const xct_off = so_info->off_xct_off;
-    Elf64_Addr pfx = xct_off;  // might be zeroed later if (n_LOAD <= 2)
+    Elf64_Phdr const *phdr = (Elf64_Phdr *)(1+ (Elf64_Ehdr *)(void *)va_load);
+    Elf64_Addr const base = (Elf64_Addr)va_load - phdr->p_vaddr;
+    So_info so_infc;  // So_info Copy
+    memcpy(&so_infc, so_info, sizeof(so_infc));  // before de-compression overwrites
+    unsigned const xct_off = so_infc.off_xct_off;
+    (void)xct_off;  // use even if not DEBUG
 
     char *const cpr_ptr = so_info->off_info + va_load;
     unsigned const cpr_len = (char *)so_info - cpr_ptr;
     typedef void (*Dt_init)(int argc, char *argv[], char *envp[]);
     Dt_init const dt_init = (Dt_init)(void *)(so_info->off_user_DT_INIT + va_load);
-    DPRINTF("upx_so_main va_load=%%p  cpr_ptr=%%p  cpr_len=%%x  xct_off=%%x\\n",
-        va_load, cpr_ptr, cpr_len, xct_off);
+    DPRINTF("upx_so_main@%%p  va_load=%%p  base=%%p  cpr_ptr=%%p  cpr_len=%%x  xct_off=%%x\\n",
+        upx_so_main, va_load, base, cpr_ptr, cpr_len, xct_off);
     // DO NOT USE *so_info AFTER THIS!!  It gets overwritten.
 
     // Copy compressed data before de-compression overwrites it.
@@ -466,57 +473,40 @@ upx_so_main(  // returns &escape_hatch
     // but the access permissions may be wrong and the data may be compressed.
     // Also, rtld maps the convex hull of all PT_LOAD but assumes that the
     // file supports those pages, even though the pages might lie beyond EOF.
-    // If so, then mprotect() is not enough: SIGBUS will occur.  Thus we
+    // If so, then Pprotect() is not enough: SIGBUS will occur.  Thus we
     // must mmap anonymous pages, except for first PT_LOAD with ELF headers.
     // So the general strategy (for each PT_LOAD) is:
     //   Save any contents on low end of destination page (the "prefix" pfx).
     //   mmap(,, PROT_WRITE|PROT_READ, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
     //   Restore the prefix on the first destination page.
     //   De-compress from remaining [sideaddr, +sidelen).
-    //   mprotect(,, PF_TO_PROT(.p_flags));
+    //   Pprotect(,, PF_TO_PROT(.p_flags));
 
     // Get the uncompressed Elf64_Ehdr and Elf64_Phdr
     // The first b_info is aligned, so direct access to fields is OK.
     Extent x1 = {binfo->sz_unc, va_load};  // destination
-    mprotect(va_load, binfo->sz_unc, PROT_WRITE|PROT_READ);
+    Pprotect(va_load, binfo->sz_unc, PROT_WRITE|PROT_READ);
     Extent x0 = {binfo->sz_cpr + sizeof(*binfo), (char *)binfo};  // source
     unpackExtent(&x0, &x1);  // de-compress _Ehdr and _Phdrs; x0.buf is updated
-
-    // Count PT_LOAD; n_LOAD < 3 is special (PT_LOAD layout by binutils <= 2.29)
-    unsigned n_phdr;
-    Elf64_Phdr const *phdr;
-    n_phdr =                  ((Elf64_Ehdr *)(void *)va_load)->e_phnum;
-      phdr = (Elf64_Phdr *)(1+ (Elf64_Ehdr *)(void *)va_load);
-    unsigned n_LOAD = 0;
-    for (; n_phdr > 0; --n_phdr, ++phdr) {
-        n_LOAD += (PT_LOAD == phdr->p_type);
-    }
-    // binutils <= 2.29 has only 2 PT_LOAD: (r-x) and (rw-),
-    // and has xct_off in middle of first PT_LOAD.
-    // binutils >= 2.31 has xct-off at beginning of 2nd PT_LOAD.
-    if (n_LOAD <= 2) {
-        pfx = 0;
-    }
 
     // Process each read-only PT_LOAD.
     // A read+write PT_LOAD might be relocated by rtld before de-compression,
     // so it cannot be compressed.
     struct b_info al_bi;  // for aligned data from binfo
     void *hatch = nullptr;
-    unsigned not_first = 0;
 
-    n_phdr =                  ((Elf64_Ehdr *)(void *)va_load)->e_phnum;
-      phdr = (Elf64_Phdr *)(1+ (Elf64_Ehdr *)(void *)va_load);
+    unsigned n_phdr = ((Elf64_Ehdr *)(void *)va_load)->e_phnum;
     for (; n_phdr > 0; --n_phdr, ++phdr)
-    if ( phdr->p_type == PT_LOAD
-    && !(phdr->p_flags & PF_W)
-    && (not_first++ || n_LOAD < 3)
-    ) {
-        DPRINTF("phdr@%%p .p_vaddr=%%p  .p_filesz=%%p  .p_memsz=%%p  n_LOAD=%%p  binfo=%%p\\n",
-            phdr, phdr->p_vaddr, phdr->p_filesz, phdr->p_memsz, n_LOAD, x0.buf);
+    if ( phdr->p_type == PT_LOAD && !(phdr->p_flags & PF_W)) {
+        DPRINTF("phdr@%%p  p_offset=%%p  p_vaddr=%%p  p_filesz=%%p  p_memsz=%%p  binfo=%%p\\n",
+            phdr, phdr->p_offset, phdr->p_vaddr, phdr->p_filesz, phdr->p_memsz, x0.buf);
 
-        if (xct_off >= phdr->p_offset) {
-            pfx = xct_off - phdr->p_offset;
+        if ((phdr->p_filesz + phdr->p_offset) <= so_infc.off_xct_off) {
+            continue;  // below compressed region
+        }
+        Elf64_Addr pfx = so_infc.off_xct_off - phdr->p_offset;
+        if (             so_infc.off_xct_off < phdr->p_offset) {
+            pfx = 0;  // no more partially-compressed PT_LOAD
         }
         x0.size = sizeof(struct b_info);
         xread(&x0, (char *)&al_bi, x0.size);  // aligned binfo
@@ -525,9 +515,11 @@ upx_so_main(  // returns &escape_hatch
             al_bi.sz_unc, al_bi.sz_cpr, *(unsigned *)(void *)&al_bi.b_method);
 
         // Using .p_memsz implicitly handles .bss via MAP_ANONYMOUS.
-        x1.buf =  phdr->p_vaddr + pfx + va_load;
+        // Omit any non-tcompressed prefix (below xct_off)
+        x1.buf =  (char *)(phdr->p_vaddr + pfx + base);
         x1.size = phdr->p_memsz - pfx;
-        pfx = (phdr->p_vaddr + pfx) & ~PAGE_MASK;
+
+        pfx = (phdr->p_vaddr + pfx) & ~PAGE_MASK;  // lo fragment on page
         x1.buf  -= pfx;
         x1.size += pfx;
         DPRINTF("mmap(%%p %%p) xct_off=%%x pfx=%%x\\n", x1.buf, x1.size, xct_off, pfx);
@@ -537,23 +529,24 @@ upx_so_main(  // returns &escape_hatch
         x1.size = al_bi.sz_unc;
         x0.size = al_bi.sz_cpr + sizeof(struct b_info);
         unpackExtent(&x0, &x1);  // updates x0 and x1
-        pfx = 0;  // consider xct_off at most once
 
         if (!hatch && phdr->p_flags & PF_X) {
 //#define PAGE_MASK ~0xFFFull
 #if defined(__x86_64)  //{
-            hatch = make_hatch_x86_64(phdr, (Elf64_Addr)va_load, ~PAGE_MASK);
+            hatch = make_hatch_x86_64(phdr, base, ~PAGE_MASK);
 #elif defined(__powerpc64__)  //}{
-            hatch = make_hatch_ppc64(phdr, (Elf64_Addr)va_load, ~PAGE_MASK);
+            hatch = make_hatch_ppc64(phdr, base, ~PAGE_MASK);
 #elif defined(__aarch64__)  //}{
-            hatch = make_hatch_arm64(phdr, (Elf64_Addr)va_load, ~PAGE_MASK);
+            hatch = make_hatch_arm64(phdr, base, ~PAGE_MASK);
 #endif  //}
         }
-        DPRINTF("mprotect %%p (%%p %%p)\\n", phdr, phdr->p_vaddr + va_load, phdr->p_memsz);
         // Exchange the bits with values 4 (PF_R, PROT_EXEC) and 1 (PF_X, PROT_READ)
         // Use table lookup into a PIC-string that pre-computes the result.
-        mprotect(phdr->p_vaddr + va_load, phdr->p_memsz,
-            7& addr_string("@\x04\x02\x06\x01\x05\x03\x07")[phdr->p_flags & (PF_R|PF_W|PF_X)]);
+        unsigned prot = 7& addr_string("@\x04\x02\x06\x01\x05\x03\x07")
+            [phdr->p_flags & (PF_R|PF_W|PF_X)];
+        DPRINTF("Pprotect %%p (%%p %%p %%x)\\n",
+            phdr, (char *)(phdr->p_vaddr + base), phdr->p_memsz, prot);
+        Pprotect( (char *)(phdr->p_vaddr + base), phdr->p_memsz, prot);
     }
 
     munmap(sideaddr, cpr_len);
